@@ -4,3 +4,8 @@
 *.xlsx
 desktop.ini
 01 Logo IEP1.png
+
+# Import ponctuel des enseignants réels (données personnelles) : ne jamais publier,
+# utilisé une seule fois en local pour peupler le repo privé de données.
+js/import-data.local.js
+import.html

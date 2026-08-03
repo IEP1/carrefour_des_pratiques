@@ -31,7 +31,9 @@ const Store = {
   },
 
   async chargerEcole(ecoleId) {
-    const { data } = await chargerJSON(`ecoles/${ecoleId}.json`, { enseignants: [] });
+    const secours = (typeof SEED_ENSEIGNANTS_PAR_ECOLE !== 'undefined' && SEED_ENSEIGNANTS_PAR_ECOLE[ecoleId])
+      || { enseignants: [] };
+    const { data } = await chargerJSON(`ecoles/${ecoleId}.json`, secours);
     return data;
   },
   async sauvegarderEcole(ecoleId, data, nomEcole) {
