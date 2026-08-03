@@ -64,7 +64,9 @@
     </div>
   </div>
 
-  <div id="zone-form" class="carte no-print" style="display:none;"></div>
+  <div id="modale-form" class="no-print" style="display:none;position:fixed;inset:0;background:rgba(14,33,56,.5);z-index:100;align-items:center;justify-content:center;">
+    <div id="zone-form" class="carte" style="max-width:560px;width:92%;max-height:88vh;overflow-y:auto;"></div>
+  </div>
 </main>
 
 <p class="pied no-print">IEP1 — Carrefour des pratiques</p>
@@ -136,7 +138,7 @@ document.getElementById('btn-ajouter').addEventListener('click', () => ouvrirFor
 function ouvrirForm(id) {
   const atelier = id ? ateliers.find(a => a.id === id) : { id: null, titre: '', cycles: [], intervenants: [], statut: 'a_valider', capacite: null };
   const zone = document.getElementById('zone-form');
-  zone.style.display = 'block';
+  document.getElementById('modale-form').style.display = 'flex';
   zone.innerHTML = `
     <h3>${id ? 'Modifier' : 'Ajouter'} un atelier</h3>
     <div class="champ">
@@ -177,7 +179,7 @@ function ouvrirForm(id) {
 }
 
 function fermerForm() {
-  document.getElementById('zone-form').style.display = 'none';
+  document.getElementById('modale-form').style.display = 'none';
 }
 
 async function validerForm(id) {
