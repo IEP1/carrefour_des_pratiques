@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Écoles — Carrefour des pratiques IEP1</title>
+<link rel="icon" href="assets/logo-iep1.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="entete-app"></div>
+
+<main>
+  <div class="barre-actions no-print">
+    <div>
+      <h2>Choisissez votre école</h2>
+      <p class="intro" style="margin:0;">Aucun mot de passe : cliquez simplement sur votre école pour accéder à la liste de vos enseignants.</p>
+    </div>
+  </div>
+
+  <div class="carte no-print">
+    <div class="ligne-champs" style="align-items:flex-end;">
+      <div class="champ" style="flex:2;">
+        <label for="nouv-ecole-nom">Ajouter une école absente de la liste</label>
+        <input type="text" id="nouv-ecole-nom" placeholder="Nom de l'école">
+      </div>
+      <div class="champ" style="max-width:180px;">
+        <button class="btn btn-primaire" id="btn-ajouter-ecole" style="width:100%;">+ Ajouter</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="alerte-zone"></div>
+
+  <div class="carte">
+    <div id="grille-ecoles" class="grille-ecoles"><p>Chargement…</p></div>
+  </div>
+</main>
+
+<p class="pied">IEP1 — Carrefour des pratiques</p>
+
+<script src="js/github-store.js"></script>
+<script src="js/seed-data.js"></script>
+<script src="js/data-store.js"></script>
+<script src="js/layout.js"></script>
+<script>
+injecterEntete('ecoles.html');
+
+let ecoles = [];
+
+async function init() {
+  try {
+    ecoles = await Store.chargerEcoles();
+  } catch (e) {
+    afficherAlerte("Impossible de charger la liste des écoles (" + e.message + ").", 'alerte-err');
+    ecoles = SEED_ECOLES;
+  }
+  rendre();
+}
+
+function afficherAlerte(msg, classe) {
+  document.getElementById('alerte-zone').innerHTML = `<div class="alerte ${classe}">${msg}</div>`;
+}
+
+function echapper(s) {
+  const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML;
+}
+
+function rendre() {
+  const zone = document.getElementById('grille-ecoles');
+  if (ecoles.length === 0) { zone.innerHTML = '<p>Aucune école enregistrée.</p>'; return; }
+  zone.innerHTML = ecoles
+    .slice()
+    .sort((a, b) => a.nom.localeCompare(b.nom))
+    .map(e => `
+      <a class="carte-ecole" href="ecole.html?id=${encodeURIComponent(e.id)}">
+        🏫<br>${echapper(e.nom)}
+      </a>
+    `).join('');
+}
+
+document.getElementById('btn-ajouter-ecole').addEventListener('click', async () => {
+  const champ = document.getElementById('nouv-ecole-nom');
+  const nom = champ.value.trim();
+  if (!nom) { champ.focus(); return; }
+  const id = nom.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  if (ecoles.some(e => e.id === id)) { afficherAlerte('Une école avec un nom proche existe déjà.', 'alerte-warn'); return; }
+  ecoles.push({ id, nom });
+  champ.value = '';
+  rendre();
+  try {
+    await Store.sauvegarderEcoles(ecoles);
+    afficherAlerte('École ajoutée.', 'alerte-ok');
+  } catch (e) {
+    afficherAlerte("Échec de l'enregistrement : " + e.message, 'alerte-err');
+  }
+});
+document.getElementById('nouv-ecole-nom').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('btn-ajouter-ecole').click();
+});
+
+init();
+</script>
+</body>
+</html>

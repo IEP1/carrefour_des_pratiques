@@ -1,0 +1,6 @@
+# Documents sources contenant des données personnelles (noms d'enseignants) :
+# ne jamais publier sur le repo de code, qui doit rester public pour GitHub Pages.
+*.docx
+*.xlsx
+desktop.ini
+01 Logo IEP1.png

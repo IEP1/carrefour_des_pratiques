@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Émargement — Carrefour des pratiques IEP1</title>
+<link rel="icon" href="assets/logo-iep1.png">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .liste-check { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 6px 14px; margin: 10px 0; }
+  .liste-check label { font-weight: 400; display: flex; align-items: center; gap: 8px; }
+  .liste-check input { width: auto; }
+  #impression-emargement { display: none; }
+  @media print {
+    #impression-emargement { display: block !important; }
+    .no-print { display: none !important; }
+    .feuille-emargement { padding: 10px 0; }
+    .feuille-emargement h2 { margin-bottom: 2px; }
+    .feuille-emargement table { margin-top: 14px; }
+    .feuille-emargement th, .feuille-emargement td { border: 1px solid #999; padding: 8px; }
+    .feuille-emargement .col-signature { width: 30%; }
+  }
+</style>
+</head>
+<body>
+<div id="entete-app"></div>
+
+<main>
+  <div class="no-print">
+    <h2>Feuilles d'émargation</h2>
+    <p class="intro">Sélectionnez un ou plusieurs ateliers : une feuille sera générée pour chacune de leurs 3 sessions (nom de l'atelier, animateur, liste des enseignants attendus).</p>
+  </div>
+
+  <div id="alerte-zone"></div>
+
+  <div class="carte no-print">
+    <div class="barre-actions" style="margin-bottom:6px;">
+      <h3 style="margin:0;">Ateliers à imprimer</h3>
+      <div class="groupe-btns">
+        <button class="btn btn-secondaire btn-sm" id="btn-tout">Tout sélectionner</button>
+        <button class="btn btn-secondaire btn-sm" id="btn-aucun">Tout désélectionner</button>
+      </div>
+    </div>
+    <div id="liste-ateliers" class="liste-check"><p>Chargement…</p></div>
+    <div class="groupe-btns" style="margin-top:14px;">
+      <button class="btn btn-primaire" id="btn-generer">🖨 Générer et imprimer les feuilles sélectionnées</button>
+    </div>
+  </div>
+
+  <div id="impression-emargement"></div>
+</main>
+
+<p class="pied no-print">IEP1 — Carrefour des pratiques</p>
+
+<script src="js/github-store.js"></script>
+<script src="js/seed-data.js"></script>
+<script src="js/data-store.js"></script>
+<script src="js/layout.js"></script>
+<script>
+injecterEntete('emargement.html');
+
+let ateliers = [], config = null, resultat = null;
+
+async function init() {
+  try {
+    [ateliers, config, resultat] = await Promise.all([
+      Store.chargerAteliers(), Store.chargerConfig(), Store.chargerRepartition()
+    ]);
+  } catch (e) {
+    afficherAlerte("Erreur de chargement (" + e.message + ").", 'alerte-err');
+    ateliers = SEED_ATELIERS; config = SEED_CONFIG;
+  }
+  if (!resultat) {
+    afficherAlerte('Aucune répartition n\'a encore été calculée. Rendez-vous sur la page « Répartition » d\'abord.', 'alerte-warn');
+    document.getElementById('liste-ateliers').innerHTML = '';
+    document.getElementById('btn-generer').disabled = true;
+    return;
+  }
+  rendreListe();
+}
+
+function afficherAlerte(msg, classe) {
+  document.getElementById('alerte-zone').innerHTML = `<div class="alerte ${classe} no-print">${msg}</div>`;
+}
+function echapper(s) {
+  const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML;
+}
+
+function nbParticipantsAtelier(atelierId) {
+  return config.sessions.reduce((total, s) => {
+    const g = resultat.parSession[s.id].find(x => x.atelierId === atelierId);
+    return total + (g ? g.participants.length : 0);
+  }, 0);
+}
+
+function rendreListe() {
+  document.getElementById('liste-ateliers').innerHTML = ateliers.map(a => `
+    <label>
+      <input type="checkbox" class="chk-atelier" value="${a.id}" ${nbParticipantsAtelier(a.id) > 0 ? 'checked' : ''}>
+      ${echapper(a.titre)} <span style="color:var(--texte-muted);">(${nbParticipantsAtelier(a.id)} participant(s))</span>
+    </label>
+  `).join('');
+}
+
+document.getElementById('btn-tout').addEventListener('click', () => {
+  document.querySelectorAll('.chk-atelier').forEach(c => c.checked = true);
+});
+document.getElementById('btn-aucun').addEventListener('click', () => {
+  document.querySelectorAll('.chk-atelier').forEach(c => c.checked = false);
+});
+
+document.getElementById('btn-generer').addEventListener('click', () => {
+  const idsChoisis = [...document.querySelectorAll('.chk-atelier:checked')].map(c => c.value);
+  if (idsChoisis.length === 0) { afficherAlerte('Sélectionnez au moins un atelier.', 'alerte-warn'); return; }
+
+  const zone = document.getElementById('impression-emargement');
+  let html = '';
+  idsChoisis.forEach(atelierId => {
+    const atelier = ateliers.find(a => a.id === atelierId);
+    config.sessions.forEach(s => {
+      const groupe = resultat.parSession[s.id].find(g => g.atelierId === atelierId);
+      const participants = groupe ? groupe.participants : [];
+      html += `
+        <div class="feuille-emargement page-imprimable">
+          <h2>${echapper(atelier.titre)}</h2>
+          <p><strong>Animateur(s) :</strong> ${atelier.intervenants.map(echapper).join(', ') || '—'}</p>
+          <p><strong>${echapper(s.label)}</strong> — ${echapper(s.horaire)} — ${echapper(config.date)} — ${echapper(config.lieu)}</p>
+          <table style="width:100%;border-collapse:collapse;">
+            <thead><tr><th style="width:40px;">N°</th><th>Enseignant</th><th>École</th><th class="col-signature">Émargement</th></tr></thead>
+            <tbody>
+              ${participants.length > 0 ? participants.map((p, i) => `
+                <tr><td>${i + 1}</td><td>${echapper(p.nom)}</td><td>${echapper(p.ecoleNom)}</td><td></td></tr>
+              `).join('') : '<tr><td colspan="4">Aucun participant.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      `;
+    });
+  });
+  zone.innerHTML = html;
+  window.print();
+});
+
+init();
+</script>
+</body>
+</html>

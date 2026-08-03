@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>École — Carrefour des pratiques IEP1</title>
+<link rel="icon" href="assets/logo-iep1.png">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .grille-choix th.col-atelier { writing-mode: vertical-rl; transform: rotate(180deg); max-width: 26px; white-space: normal; text-align: left; font-size: 0.68rem; padding: 6px 4px; }
+  .grille-choix td.cell-choix { text-align: center; cursor: pointer; user-select: none; padding: 4px; }
+  .grille-choix td.cell-choix:hover { background: var(--teal-light); }
+  .grille-choix .pastille-rang { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:50%; background:var(--navy); color:#fff; font-size:0.72rem; font-weight:700; }
+  .nom-enseignant { white-space: nowrap; }
+  .horodatage { font-size: 0.7rem; color: var(--texte-muted); }
+  #impression-rempli, #impression-vierge { display: none; }
+  @media print {
+    body.mode-impression-rempli #impression-rempli { display: block !important; }
+    body.mode-impression-vierge #impression-vierge { display: block !important; }
+    .doc-imprime table { font-size: 0.78rem; }
+    .doc-imprime th, .doc-imprime td { border: 1px solid #999; padding: 5px 7px; }
+    .doc-imprime .case-vierge { width: 28px; height: 18px; border: 1px solid #999; display:inline-block; }
+  }
+</style>
+</head>
+<body>
+<div id="entete-app"></div>
+
+<main>
+  <p class="no-print"><a href="ecoles.html">← Toutes les écoles</a></p>
+
+  <div class="barre-actions no-print">
+    <div>
+      <h2 id="titre-ecole">École</h2>
+      <p class="intro" style="margin:0;">Sélectionnez, pour chaque enseignant, ses <span id="nb-choix-txt">5</span> ateliers préférés en cliquant dans l'ordre de préférence (1er clic = choix n°1).</p>
+    </div>
+    <div class="groupe-btns">
+      <button class="btn btn-secondaire" id="btn-imprimer-vierge">🖨 Feuille vierge (papier)</button>
+      <button class="btn btn-navy" id="btn-imprimer-rempli">🖨 Imprimer les choix</button>
+    </div>
+  </div>
+
+  <div class="carte no-print">
+    <h3 style="margin-top:0;">Ajouter un enseignant</h3>
+    <div class="ligne-champs" style="align-items:flex-end;">
+      <div class="champ" style="flex:2;">
+        <label for="nouv-nom">Nom et prénom</label>
+        <input type="text" id="nouv-nom" placeholder="Ex : Julie MARTIN">
+      </div>
+      <div class="champ" style="max-width:120px;">
+        <label for="nouv-cycle">Cycle</label>
+        <select id="nouv-cycle"><option value="C1">C1</option><option value="C2" selected>C2</option><option value="C3">C3</option></select>
+      </div>
+      <div class="champ" style="max-width:180px;">
+        <button class="btn btn-primaire" id="btn-ajouter-enseignant" style="width:100%;">+ Ajouter</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="alerte-zone"></div>
+
+  <div class="carte no-print">
+    <div class="table-wrap">
+      <table class="grille-choix">
+        <thead><tr id="entete-grille"></tr></thead>
+        <tbody id="corps-grille"><tr><td>Chargement…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="impression-rempli" class="doc-imprime"></div>
+  <div id="impression-vierge" class="doc-imprime"></div>
+</main>
+
+<p class="pied no-print">IEP1 — Carrefour des pratiques</p>
+
+<script src="js/github-store.js"></script>
+<script src="js/seed-data.js"></script>
+<script src="js/data-store.js"></script>
+<script src="js/layout.js"></script>
+<script>
+injecterEntete('ecoles.html');
+
+const params = new URLSearchParams(location.search);
+const ecoleId = params.get('id');
+
+let ecole = null, ateliers = [], config = null, donneesEcole = { enseignants: [] };
+let minuteurSauvegarde = null;
+
+async function init() {
+  if (!ecoleId) { document.body.innerHTML = '<p style="padding:20px;">École introuvable.</p>'; return; }
+  try {
+    const [ecoles, at, cfg, de] = await Promise.all([
+      Store.chargerEcoles(), Store.chargerAteliers(), Store.chargerConfig(), Store.chargerEcole(ecoleId)
+    ]);
+    ecole = ecoles.find(e => e.id === ecoleId) || { id: ecoleId, nom: ecoleId };
+    ateliers = at; config = cfg; donneesEcole = de || { enseignants: [] };
+  } catch (e) {
+    afficherAlerte("Erreur de chargement (" + e.message + ").", 'alerte-err');
+    ecole = { nom: ecoleId }; ateliers = SEED_ATELIERS; config = SEED_CONFIG;
+  }
+  document.getElementById('titre-ecole').textContent = ecole.nom;
+  document.getElementById('nb-choix-txt').textContent = config.nombreChoix;
+  rendreGrille();
+}
+
+function afficherAlerte(msg, classe) {
+  document.getElementById('alerte-zone').innerHTML = `<div class="alerte ${classe} no-print">${msg}</div>`;
+}
+function echapper(s) {
+  const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML;
+}
+
+function rendreGrille() {
+  document.getElementById('entete-grille').innerHTML =
+    '<th class="nom-enseignant">Enseignant</th><th class="no-print">Cycle</th>' +
+    ateliers.map(a => `<th class="col-atelier" title="${echapper(a.titre)}">${echapper(a.titre)}</th>`).join('') +
+    '<th class="no-print">‎</th>';
+
+  const corps = document.getElementById('corps-grille');
+  if (donneesEcole.enseignants.length === 0) {
+    corps.innerHTML = `<tr><td colspan="${ateliers.length + 3}">Aucun enseignant. Ajoutez-en un ci-dessus.</td></tr>`;
+    return;
+  }
+  corps.innerHTML = donneesEcole.enseignants.map(ens => `
+    <tr>
+      <td class="nom-enseignant">
+        <strong>${echapper(ens.nom)}</strong><br>
+        <span class="horodatage">${ens.horodatage ? '✅ Rempli le ' + formaterHorodatage(ens.horodatage) : '⏳ Non rempli'}</span>
+      </td>
+      <td class="no-print">
+        <select onchange="changerCycle('${ens.id}', this.value)" style="font-size:0.78rem;padding:3px;">
+          ${['C1', 'C2', 'C3'].map(c => `<option value="${c}" ${ens.cycle === c ? 'selected' : ''}>${c}</option>`).join('')}
+        </select>
+      </td>
+      ${ateliers.map(a => {
+        const rang = ens.choix.indexOf(a.id) + 1;
+        return `<td class="cell-choix" onclick="basculerChoix('${ens.id}','${a.id}')">${rang > 0 ? `<span class="pastille-rang">${rang}</span>` : ''}</td>`;
+      }).join('')}
+      <td class="no-print"><button class="btn btn-danger btn-sm" onclick="supprimerEnseignant('${ens.id}')">✕</button></td>
+    </tr>
+  `).join('');
+}
+
+function formaterHorodatage(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('fr-FR') + ' à ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function basculerChoix(ensId, atelierId) {
+  const ens = donneesEcole.enseignants.find(e => e.id === ensId);
+  if (!ens) return;
+  const idx = ens.choix.indexOf(atelierId);
+  if (idx >= 0) {
+    ens.choix.splice(idx, 1);
+  } else {
+    if (ens.choix.length >= config.nombreChoix) {
+      afficherAlerte(`${ens.nom} a déjà ses ${config.nombreChoix} choix. Décochez-en un avant d'en ajouter un autre.`, 'alerte-warn');
+      return;
+    }
+    ens.choix.push(atelierId);
+  }
+  if (ens.choix.length === config.nombreChoix && !ens.horodatage) {
+    ens.horodatage = horodatageMaintenant();
+  }
+  if (ens.choix.length < config.nombreChoix) {
+    ens.horodatage = ens.horodatage; // on ne retire pas l'horodatage déjà acquis si l'enseignant modifie ensuite
+  }
+  rendreGrille();
+  planifierSauvegarde();
+}
+
+document.getElementById('btn-ajouter-enseignant').addEventListener('click', () => {
+  const champNom = document.getElementById('nouv-nom');
+  const nom = champNom.value.trim();
+  if (!nom) { champNom.focus(); return; }
+  const cycle = document.getElementById('nouv-cycle').value;
+  donneesEcole.enseignants.push({ id: genererIdEnseignant(), nom, cycle, choix: [], horodatage: null });
+  champNom.value = '';
+  champNom.focus();
+  rendreGrille();
+  planifierSauvegarde();
+});
+document.getElementById('nouv-nom').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('btn-ajouter-enseignant').click();
+});
+
+function changerCycle(ensId, cycle) {
+  const ens = donneesEcole.enseignants.find(e => e.id === ensId);
+  if (!ens) return;
+  ens.cycle = cycle;
+  planifierSauvegarde();
+}
+
+async function supprimerEnseignant(id) {
+  const ens = donneesEcole.enseignants.find(e => e.id === id);
+  if (!ens || !confirm(`Retirer ${ens.nom} ?`)) return;
+  donneesEcole.enseignants = donneesEcole.enseignants.filter(e => e.id !== id);
+  rendreGrille();
+  planifierSauvegarde();
+}
+
+function planifierSauvegarde() {
+  afficherAlerte('Enregistrement…', 'alerte-info');
+  clearTimeout(minuteurSauvegarde);
+  minuteurSauvegarde = setTimeout(async () => {
+    try {
+      await Store.sauvegarderEcole(ecoleId, donneesEcole, ecole.nom);
+      afficherAlerte('Enregistré ✓', 'alerte-ok');
+    } catch (e) {
+      afficherAlerte("Échec de l'enregistrement : " + e.message, 'alerte-err');
+    }
+  }, 700);
+}
+
+/* ===== Impression : choix actuels ===== */
+document.getElementById('btn-imprimer-rempli').addEventListener('click', () => {
+  const zone = document.getElementById('impression-rempli');
+  zone.innerHTML = `
+    <h2>${echapper(ecole.nom)} — Choix des enseignants</h2>
+    <p>${echapper(config.titreEvenement)} — ${config.date} — ${echapper(config.lieu)}</p>
+    <table><thead><tr><th>Enseignant</th>${Array.from({length: config.nombreChoix}, (_, i) => `<th>Choix ${i+1}</th>`).join('')}</tr></thead>
+    <tbody>
+      ${donneesEcole.enseignants.map(ens => `
+        <tr>
+          <td>${echapper(ens.nom)}</td>
+          ${Array.from({length: config.nombreChoix}, (_, i) => {
+            const at = ateliers.find(a => a.id === ens.choix[i]);
+            return `<td>${at ? echapper(at.titre) : '—'}</td>`;
+          }).join('')}
+        </tr>
+      `).join('')}
+    </tbody></table>
+  `;
+  imprimer('mode-impression-rempli');
+});
+
+/* ===== Impression : feuille vierge à remplir sur papier ===== */
+document.getElementById('btn-imprimer-vierge').addEventListener('click', () => {
+  const zone = document.getElementById('impression-vierge');
+  const nbLignes = Math.max(donneesEcole.enseignants.length, 15);
+  const nomsExistants = donneesEcole.enseignants.map(e => e.nom);
+  const lignesNoms = Array.from({ length: nbLignes }, (_, i) => nomsExistants[i] || '');
+  zone.innerHTML = `
+    <h2>${echapper(ecole.nom)} — Feuille de choix (à remplir puis saisir dans l'application)</h2>
+    <p>${echapper(config.titreEvenement)} — ${config.date} — ${echapper(config.lieu)}. Indiquer, pour chaque enseignant, le rang de préférence (1 à ${config.nombreChoix}) dans la case de chaque atelier souhaité.</p>
+    <table>
+      <thead><tr><th>Enseignant</th><th>Cycle</th>${ateliers.map(a => `<th>${echapper(a.titre)}<br><small>${a.cycles.join('/')}</small></th>`).join('')}</tr></thead>
+      <tbody>
+        ${lignesNoms.map((nom, i) => `
+          <tr>
+            <td style="min-width:140px;">${echapper(nom)}</td>
+            <td style="min-width:50px;">${echapper((donneesEcole.enseignants[i] && donneesEcole.enseignants[i].cycle) || '')}</td>
+            ${ateliers.map(() => `<td style="text-align:center;"><span class="case-vierge"></span></td>`).join('')}
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+  imprimer('mode-impression-vierge');
+});
+
+function imprimer(classe) {
+  document.body.classList.add(classe);
+  window.print();
+  setTimeout(() => document.body.classList.remove(classe), 500);
+}
+
+init();
+</script>
+</body>
+</html>

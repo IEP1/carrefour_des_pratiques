@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ateliers — Carrefour des pratiques IEP1</title>
+<link rel="icon" href="assets/logo-iep1.png">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  @media print {
+    .entete-print { display: flex !important; align-items: center; gap: 12px; margin-bottom: 14px; }
+    .entete-print img { height: 40px; }
+    .entete-print h2 { margin: 0; }
+    table { font-size: 0.72rem; }
+    th, td { padding: 4px 6px; }
+  }
+  .entete-print { display: none; }
+</style>
+</head>
+<body>
+<div id="entete-app"></div>
+
+<main>
+  <div class="entete-print">
+    <img src="assets/logo-iep1.png" alt="IEP1">
+    <div>
+      <h2 id="ep-titre">Carrefour des pratiques</h2>
+      <div id="ep-sous" class="intro" style="margin:0;"></div>
+    </div>
+  </div>
+
+  <div class="barre-actions no-print">
+    <div>
+      <h2>Liste des ateliers</h2>
+      <p class="intro" style="margin:0;">Ajoutez, modifiez ou retirez des ateliers. Statut : <span class="badge badge-a-valider">à valider</span> / <span class="badge badge-valide">validé</span></p>
+    </div>
+    <div class="groupe-btns">
+      <button class="btn btn-secondaire" id="btn-config">⚙ Paramètres de l'événement</button>
+      <button class="btn btn-navy" onclick="window.print()">🖨 Imprimer la liste (1 page)</button>
+      <button class="btn btn-primaire" id="btn-ajouter">+ Ajouter un atelier</button>
+    </div>
+  </div>
+
+  <div id="zone-config" class="carte no-print" style="display:none;"></div>
+
+  <div id="alerte-zone"></div>
+
+  <div class="carte">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:34%;">Atelier</th>
+            <th style="width:14%;">Cycles</th>
+            <th style="width:24%;">Intervenant(s)</th>
+            <th style="width:12%;">Statut</th>
+            <th class="no-print" style="width:16%;">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="corps-ateliers">
+          <tr><td colspan="5">Chargement…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="zone-form" class="carte no-print" style="display:none;"></div>
+</main>
+
+<p class="pied no-print">IEP1 — Carrefour des pratiques</p>
+
+<script src="js/github-store.js"></script>
+<script src="js/seed-data.js"></script>
+<script src="js/data-store.js"></script>
+<script src="js/layout.js"></script>
+<script>
+injecterEntete('index.html');
+
+let ateliers = [];
+let config = null;
+
+async function init() {
+  try {
+    [config, ateliers] = await Promise.all([Store.chargerConfig(), Store.chargerAteliers()]);
+  } catch (e) {
+    afficherAlerte("Impossible de charger les données depuis GitHub (" + e.message + "). Vérifiez la connexion (bouton ⚙ Données).", 'alerte-err');
+    config = SEED_CONFIG; ateliers = SEED_ATELIERS;
+  }
+  document.getElementById('ep-titre').textContent = config.titreEvenement;
+  document.getElementById('ep-sous').textContent = `${formaterDate(config.date)} — ${config.lieu}`;
+  rendreTableau();
+}
+
+function afficherAlerte(msg, classe) {
+  document.getElementById('alerte-zone').innerHTML = `<div class="alerte ${classe} no-print">${msg}</div>`;
+}
+
+function formaterDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso + 'T00:00:00');
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function rendreTableau() {
+  const corps = document.getElementById('corps-ateliers');
+  if (ateliers.length === 0) {
+    corps.innerHTML = '<tr><td colspan="5">Aucun atelier pour le moment.</td></tr>';
+    return;
+  }
+  corps.innerHTML = ateliers.map(a => `
+    <tr class="${a.statut === 'a_valider' ? 'ligne-a-valider' : 'ligne-valide'}">
+      <td><strong>${echapper(a.titre)}</strong></td>
+      <td>${a.cycles.map(c => `<span class="puce-cycle">${c}</span>`).join(' ')}</td>
+      <td>${a.intervenants.map(echapper).join(', ')}</td>
+      <td>
+        <span class="badge ${a.statut === 'a_valider' ? 'badge-a-valider' : 'badge-valide'}">
+          ${a.statut === 'a_valider' ? 'À valider' : 'Validé'}
+        </span>
+      </td>
+      <td class="no-print">
+        <div class="groupe-btns">
+          <button class="btn btn-secondaire btn-sm" onclick="ouvrirForm('${a.id}')">Modifier</button>
+          <button class="btn btn-danger btn-sm" onclick="supprimerAtelier('${a.id}')">Retirer</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function echapper(s) {
+  const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML;
+}
+
+document.getElementById('btn-ajouter').addEventListener('click', () => ouvrirForm(null));
+
+function ouvrirForm(id) {
+  const atelier = id ? ateliers.find(a => a.id === id) : { id: null, titre: '', cycles: [], intervenants: [], statut: 'a_valider', capacite: null };
+  const zone = document.getElementById('zone-form');
+  zone.style.display = 'block';
+  zone.innerHTML = `
+    <h3>${id ? 'Modifier' : 'Ajouter'} un atelier</h3>
+    <div class="champ">
+      <label>Titre de l'atelier</label>
+      <input type="text" id="f-titre" value="${echapper(atelier.titre)}">
+    </div>
+    <div class="ligne-champs">
+      <div class="champ">
+        <label>Cycles concernés</label>
+        <div>
+          ${['C1', 'C2', 'C3'].map(c => `
+            <label style="display:inline-flex;align-items:center;gap:4px;font-weight:400;margin-right:14px;">
+              <input type="checkbox" value="${c}" class="f-cycle" ${atelier.cycles.includes(c) ? 'checked' : ''} style="width:auto;"> ${c}
+            </label>`).join('')}
+        </div>
+      </div>
+      <div class="champ">
+        <label>Statut</label>
+        <select id="f-statut">
+          <option value="a_valider" ${atelier.statut === 'a_valider' ? 'selected' : ''}>À valider</option>
+          <option value="valide" ${atelier.statut === 'valide' ? 'selected' : ''}>Validé</option>
+        </select>
+      </div>
+      <div class="champ">
+        <label>Capacité (vide = défaut : ${config.capaciteParDefaut})</label>
+        <input type="number" id="f-capacite" min="1" value="${atelier.capacite ?? ''}">
+      </div>
+    </div>
+    <div class="champ">
+      <label>Intervenant(s) — séparés par une virgule</label>
+      <input type="text" id="f-intervenants" value="${echapper(atelier.intervenants.join(', '))}">
+    </div>
+    <div class="groupe-btns">
+      <button class="btn btn-secondaire" onclick="fermerForm()">Annuler</button>
+      <button class="btn btn-primaire" onclick="validerForm('${atelier.id || ''}')">Enregistrer</button>
+    </div>
+  `;
+}
+
+function fermerForm() {
+  document.getElementById('zone-form').style.display = 'none';
+}
+
+async function validerForm(id) {
+  const titre = document.getElementById('f-titre').value.trim();
+  if (!titre) { alert('Le titre est obligatoire.'); return; }
+  const cycles = [...document.querySelectorAll('.f-cycle:checked')].map(c => c.value);
+  const statut = document.getElementById('f-statut').value;
+  const capaciteVal = document.getElementById('f-capacite').value;
+  const capacite = capaciteVal ? parseInt(capaciteVal, 10) : null;
+  const intervenants = document.getElementById('f-intervenants').value.split(',').map(s => s.trim()).filter(Boolean);
+
+  if (id) {
+    const a = ateliers.find(x => x.id === id);
+    Object.assign(a, { titre, cycles, statut, capacite, intervenants });
+  } else {
+    ateliers.push({ id: genererIdAtelier(ateliers), titre, cycles, statut, capacite, intervenants });
+  }
+  await sauvegarder();
+  fermerForm();
+}
+
+async function supprimerAtelier(id) {
+  if (!confirm('Retirer cet atelier ? Cette action est enregistrée immédiatement.')) return;
+  ateliers = ateliers.filter(a => a.id !== id);
+  await sauvegarder();
+}
+
+async function sauvegarder() {
+  rendreTableau();
+  try {
+    await Store.sauvegarderAteliers(ateliers);
+    afficherAlerte('Enregistré.', 'alerte-ok');
+  } catch (e) {
+    afficherAlerte("Échec de l'enregistrement sur GitHub : " + e.message, 'alerte-err');
+  }
+}
+
+document.getElementById('btn-config').addEventListener('click', () => {
+  const zone = document.getElementById('zone-config');
+  zone.style.display = zone.style.display === 'none' ? 'block' : 'none';
+  if (zone.style.display === 'block') rendreConfig();
+});
+
+function rendreConfig() {
+  const zone = document.getElementById('zone-config');
+  zone.innerHTML = `
+    <h3 style="margin-top:0;">Paramètres de l'événement</h3>
+    <div class="ligne-champs">
+      <div class="champ"><label>Nom de l'événement</label><input type="text" id="c-titre" value="${echapper(config.titreEvenement)}"></div>
+      <div class="champ"><label>Date</label><input type="date" id="c-date" value="${config.date}"></div>
+      <div class="champ"><label>Lieu</label><input type="text" id="c-lieu" value="${echapper(config.lieu)}"></div>
+    </div>
+    <div class="ligne-champs">
+      <div class="champ"><label>Nombre de choix par enseignant</label><input type="number" id="c-choix" min="1" value="${config.nombreChoix}"></div>
+      <div class="champ"><label>Capacité par défaut / atelier</label><input type="number" id="c-capacite" min="1" value="${config.capaciteParDefaut}"></div>
+    </div>
+    <h3>Sessions (créneaux)</h3>
+    <div id="c-sessions">
+      ${config.sessions.map((s, i) => `
+        <div class="ligne-champs">
+          <div class="champ"><label>Session ${i + 1} — libellé</label><input type="text" class="cs-label" value="${echapper(s.label)}"></div>
+          <div class="champ"><label>Horaire</label><input type="text" class="cs-horaire" value="${echapper(s.horaire)}"></div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="groupe-btns">
+      <button class="btn btn-primaire" onclick="enregistrerConfig()">Enregistrer les paramètres</button>
+    </div>
+  `;
+}
+
+async function enregistrerConfig() {
+  config.titreEvenement = document.getElementById('c-titre').value.trim();
+  config.date = document.getElementById('c-date').value;
+  config.lieu = document.getElementById('c-lieu').value.trim();
+  config.nombreChoix = parseInt(document.getElementById('c-choix').value, 10) || 5;
+  config.capaciteParDefaut = parseInt(document.getElementById('c-capacite').value, 10) || 20;
+  const labels = [...document.querySelectorAll('.cs-label')].map(el => el.value.trim());
+  const horaires = [...document.querySelectorAll('.cs-horaire')].map(el => el.value.trim());
+  config.sessions = config.sessions.map((s, i) => ({ ...s, label: labels[i], horaire: horaires[i] }));
+  try {
+    await Store.sauvegarderConfig(config);
+    afficherAlerte('Paramètres enregistrés.', 'alerte-ok');
+    document.getElementById('ep-titre').textContent = config.titreEvenement;
+    document.getElementById('ep-sous').textContent = `${formaterDate(config.date)} — ${config.lieu}`;
+  } catch (e) {
+    afficherAlerte("Échec de l'enregistrement : " + e.message, 'alerte-err');
+  }
+}
+
+init();
+</script>
+</body>
+</html>

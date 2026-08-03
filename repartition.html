@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Répartition — Carrefour des pratiques IEP1</title>
+<link rel="icon" href="assets/logo-iep1.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="entete-app"></div>
+
+<main>
+  <div class="barre-actions no-print">
+    <div>
+      <h2>Répartition des enseignants sur les ateliers</h2>
+      <p class="intro" style="margin:0;">Calcule automatiquement qui va où, sur les 3 sessions, à partir des choix saisis par les écoles.</p>
+    </div>
+    <div class="groupe-btns">
+      <button class="btn btn-primaire" id="btn-calculer">▶ Calculer la répartition</button>
+    </div>
+  </div>
+
+  <div id="alerte-zone"></div>
+  <div id="resume" class="carte no-print" style="display:none;"></div>
+  <div id="resultats"></div>
+</main>
+
+<p class="pied no-print">IEP1 — Carrefour des pratiques</p>
+
+<script src="js/github-store.js"></script>
+<script src="js/seed-data.js"></script>
+<script src="js/data-store.js"></script>
+<script src="js/algo.js"></script>
+<script src="js/layout.js"></script>
+<script>
+injecterEntete('repartition.html');
+
+let ateliers = [], config = null, resultat = null;
+
+async function init() {
+  try {
+    [ateliers, config, resultat] = await Promise.all([
+      Store.chargerAteliers(), Store.chargerConfig(), Store.chargerRepartition()
+    ]);
+  } catch (e) {
+    afficherAlerte("Erreur de chargement (" + e.message + ").", 'alerte-err');
+    ateliers = SEED_ATELIERS; config = SEED_CONFIG;
+  }
+  if (resultat) rendreResultats();
+  else afficherAlerte("Aucune répartition calculée pour l'instant. Cliquez sur « Calculer la répartition ».", 'alerte-info');
+}
+
+function afficherAlerte(msg, classe) {
+  document.getElementById('alerte-zone').innerHTML = `<div class="alerte ${classe} no-print">${msg}</div>`;
+}
+function echapper(s) {
+  const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML;
+}
+
+document.getElementById('btn-calculer').addEventListener('click', async () => {
+  afficherAlerte('Chargement des écoles et calcul en cours…', 'alerte-info');
+  try {
+    const ecolesAvecDonnees = await Store.chargerToutesLesEcolesAvecDonnees();
+    const enseignants = [];
+    ecolesAvecDonnees.forEach(ec => {
+      (ec.donnees.enseignants || []).forEach(ens => {
+        enseignants.push({ ...ens, ecoleNom: ec.nom });
+      });
+    });
+    if (enseignants.length === 0) {
+      afficherAlerte("Aucun enseignant saisi dans aucune école pour le moment.", 'alerte-warn');
+      return;
+    }
+    resultat = calculerRepartition(ateliers, config, enseignants);
+    await Store.sauvegarderRepartition(resultat);
+    afficherAlerte(`Répartition calculée et enregistrée : ${resultat.stats.complets}/${resultat.stats.totalEnseignants} enseignants placés sur leurs 3 ateliers.`, resultat.stats.incomplets > 0 ? 'alerte-warn' : 'alerte-ok');
+    rendreResultats();
+  } catch (e) {
+    afficherAlerte('Échec du calcul ou de l\'enregistrement : ' + e.message, 'alerte-err');
+  }
+});
+
+function rendreResultats() {
+  const resume = document.getElementById('resume');
+  resume.style.display = 'block';
+  resume.innerHTML = `
+    <h3 style="margin-top:0;">Résumé</h3>
+    <p>Calculé le ${new Date(resultat.genereLe).toLocaleString('fr-FR')}.
+    <strong>${resultat.stats.complets}</strong> enseignant(s) complet(s) sur leurs 3 ateliers,
+    <strong>${resultat.stats.incomplets}</strong> incomplet(s) sur un total de ${resultat.stats.totalEnseignants}.</p>
+    ${resultat.stats.incomplets > 0 ? `<p class="alerte alerte-warn">Voir la liste des enseignants incomplets en bas de page.</p>` : ''}
+  `;
+
+  const zone = document.getElementById('resultats');
+  zone.innerHTML = config.sessions.map(s => `
+    <div class="carte">
+      <h3>${echapper(s.label)} <span style="font-weight:400;color:var(--texte-muted);">(${echapper(s.horaire)})</span></h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Atelier</th><th>Intervenant(s)</th><th>Participants</th><th>Places</th></tr></thead>
+          <tbody>
+            ${resultat.parSession[s.id].filter(g => g.participants.length > 0).map(g => `
+              <tr>
+                <td><strong>${echapper(g.titre)}</strong></td>
+                <td>${g.intervenants.map(echapper).join(', ')}</td>
+                <td>${g.participants.map(p => echapper(p.nom) + ' <span style="color:var(--texte-muted);">(' + echapper(p.ecoleNom) + ')</span>').join(', ') || '—'}</td>
+                <td>${g.participants.length} / ${g.capacite}</td>
+              </tr>
+            `).join('') || '<tr><td colspan="4">Aucun participant sur cet atelier.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `).join('');
+
+  const incomplets = resultat.parEnseignant.filter(e => !e.complet);
+  if (incomplets.length > 0) {
+    zone.innerHTML += `
+      <div class="carte">
+        <h3>⚠ Enseignants incomplets (moins de 3 ateliers)</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Enseignant</th><th>École</th><th>Cycle</th><th>Ateliers obtenus</th></tr></thead>
+            <tbody>
+              ${incomplets.map(e => `
+                <tr>
+                  <td>${echapper(e.nom)}</td><td>${echapper(e.ecoleNom)}</td><td>${echapper(e.cycle || '—')}</td>
+                  <td>${Object.values(e.sessions).filter(Boolean).length} / 3</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+}
+
+init();
+</script>
+</body>
+</html>
