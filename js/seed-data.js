@@ -45,5 +45,6 @@ const SEED_ECOLES = [
   'BARDOU', 'BENEBIG', 'CHT', 'CLAIN', 'DORBRITZ', 'DSMer',
   'EEPU FONG', 'EMPU FONG', 'EEPU MDR', 'EMPU MDR',
   'DILLENSEGER', 'L. DE GRESLAN', 'MAINGUET', 'MYOSOTIS', 'NIAOULIS',
-  'OASIS', 'ORANGERS', 'YAHOUE', 'PETUNIAS', 'S. RUSSIER', 'F. SURLEAU'
+  'OASIS', 'ORANGERS', 'YAHOUE', 'PETUNIAS', 'S. RUSSIER', 'F. SURLEAU',
+  'DESED'
 ].map(nom => ({ id: nom.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''), nom }));

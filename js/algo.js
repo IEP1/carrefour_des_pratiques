@@ -112,10 +112,14 @@ function comparerPriorite(a, b) {
   return new Date(a.horodatage) - new Date(b.horodatage);
 }
 
-/** Cherche la meilleure place de repli : priorité au cycle de l'enseignant, puis à l'atelier le moins rempli globalement. */
+const CYCLES_RESTREINTS = ['C1', 'C2', 'C3'];
+
+/** Cherche la meilleure place de repli : priorité au cycle de l'enseignant, puis à l'atelier le moins rempli globalement.
+ *  Un enseignant Directeur ou référent DESED n'a pas de cycle propre : il est éligible à tous les ateliers. */
 function meilleureOptionRepli(enseignant, ensEtat, ateliers, restant, sessionIds) {
   const candidats = [];
-  const ateliersDuCycle = ateliers.filter(a => !enseignant.cycle || a.cycles.includes(enseignant.cycle));
+  const sansRestrictionDeCycle = !CYCLES_RESTREINTS.includes(enseignant.cycle);
+  const ateliersDuCycle = sansRestrictionDeCycle ? ateliers : ateliers.filter(a => a.cycles.includes(enseignant.cycle));
   const pool = ateliersDuCycle.length > 0 ? ateliersDuCycle : ateliers;
 
   for (const a of pool) {

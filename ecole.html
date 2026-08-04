@@ -47,9 +47,15 @@
         <label for="nouv-nom">Nom et prénom</label>
         <input type="text" id="nouv-nom" placeholder="Ex : Julie MARTIN">
       </div>
-      <div class="champ" style="max-width:120px;">
+      <div class="champ" style="max-width:150px;">
         <label for="nouv-cycle">Cycle</label>
-        <select id="nouv-cycle"><option value="C1">C1</option><option value="C2" selected>C2</option><option value="C3">C3</option></select>
+        <select id="nouv-cycle">
+          <option value="C1">C1</option>
+          <option value="C2" selected>C2</option>
+          <option value="C3">C3</option>
+          <option value="DIRECTEUR">Directeur</option>
+          <option value="DESED">DESED</option>
+        </select>
       </div>
       <div class="champ" style="max-width:180px;">
         <button class="btn btn-primaire" id="btn-ajouter-enseignant" style="width:100%;">+ Ajouter</button>
@@ -130,7 +136,7 @@ function rendreGrille() {
       </td>
       <td class="no-print">
         <select onchange="changerCycle('${ens.id}', this.value)" style="font-size:0.78rem;padding:3px;">
-          ${['C1', 'C2', 'C3'].map(c => `<option value="${c}" ${ens.cycle === c ? 'selected' : ''}>${c}</option>`).join('')}
+          ${[['C1','C1'],['C2','C2'],['C3','C3'],['DIRECTEUR','Directeur'],['DESED','DESED']].map(([v, l]) => `<option value="${v}" ${ens.cycle === v ? 'selected' : ''}>${l}</option>`).join('')}
         </select>
       </td>
       ${ateliers.map(a => {
