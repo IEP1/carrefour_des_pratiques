@@ -41,10 +41,32 @@ const SEED_ATELIERS = [
   { id: 'at-20', titre: "Apprentilangue", cycles: ['C1'], intervenants: ['Morgane BADIE'], statut: 'a_valider' }
 ];
 
+/*
+ * Liste explicite (id, nom) plutôt que générée automatiquement : l'id doit rester stable
+ * même quand le nom affiché change, car il sert de clé aux fichiers déjà enregistrés
+ * sur le repo privé de données (ecoles/<id>.json).
+ */
 const SEED_ECOLES = [
-  'BARDOU', 'BENEBIG', 'CHT', 'CLAIN', 'DORBRITZ', 'DSMer',
-  'EEPU FONG', 'EMPU FONG', 'EEPU MDR', 'EMPU MDR',
-  'DILLENSEGER', 'L. DE GRESLAN', 'MAINGUET', 'MYOSOTIS', 'NIAOULIS',
-  'OASIS', 'ORANGERS', 'YAHOUE', 'PETUNIAS', 'S. RUSSIER', 'F. SURLEAU',
-  'DESED'
-].map(nom => ({ id: nom.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''), nom }));
+  { id: 'bardou', nom: 'BARDOU' },
+  { id: 'benebig', nom: 'BENEBIG' },
+  { id: 'cht', nom: 'CHT' },
+  { id: 'clain', nom: 'CLAIN' },
+  { id: 'dorbritz', nom: 'DORBRITZ' },
+  { id: 'dsmer', nom: 'DSM' },
+  { id: 'eepu-fong', nom: 'FONG élem' },
+  { id: 'empu-fong', nom: 'FONG mat' },
+  { id: 'eepu-mdr', nom: 'MDR élem' },
+  { id: 'empu-mdr', nom: 'MDR mat' },
+  { id: 'dillenseger', nom: 'DILLENSEGER' },
+  { id: 'l-de-greslan', nom: 'LDG' },
+  { id: 'mainguet', nom: 'MAINGUET' },
+  { id: 'myosotis', nom: 'MYOSOTIS' },
+  { id: 'niaoulis', nom: 'NIAOULIS' },
+  { id: 'oasis', nom: 'OASIS' },
+  { id: 'orangers', nom: 'ORANGERS' },
+  { id: 'yahoue', nom: 'GSY' },
+  { id: 'petunias', nom: 'PETUNIAS' },
+  { id: 's-russier', nom: 'RUSSIER' },
+  { id: 'f-surleau', nom: 'SURLEAU' },
+  { id: 'desed', nom: 'DESED' }
+];
