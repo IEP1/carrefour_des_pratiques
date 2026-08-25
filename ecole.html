@@ -14,6 +14,22 @@
   .nom-enseignant { white-space: nowrap; }
   .horodatage { font-size: 0.7rem; color: var(--texte-muted); }
   #impression-rempli, #impression-vierge { display: none; }
+
+  /* Colonne "Enseignant" fixe pendant le défilement horizontal de la grille (utile sur mobile). */
+  .grille-choix th.nom-enseignant, .grille-choix td.nom-enseignant {
+    position: sticky; left: 0; z-index: 3;
+    background: var(--surface);
+    box-shadow: 2px 0 4px rgba(0,0,0,0.06);
+  }
+  .grille-choix thead th.nom-enseignant { background: var(--bleu-light); z-index: 4; }
+
+  @media (max-width: 640px) {
+    /* Cases plus grandes pour taper juste avec le doigt. */
+    .grille-choix th.col-atelier { max-width: 40px; font-size: 0.72rem; }
+    .grille-choix td.cell-choix { padding: 10px 6px; min-width: 40px; }
+    .grille-choix .pastille-rang { width: 26px; height: 26px; font-size: 0.8rem; }
+    .nom-enseignant { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+  }
   @media print {
     body.mode-impression-rempli #impression-rempli { display: block !important; }
     body.mode-impression-vierge #impression-vierge { display: block !important; }

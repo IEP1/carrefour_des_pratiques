@@ -34,7 +34,7 @@ function injecterModaleConnexion() {
   div.className = 'no-print';
   div.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(14,33,56,.5);z-index:100;align-items:center;justify-content:center;';
   div.innerHTML = `
-    <div class="carte" style="max-width:440px;width:92%;">
+    <div class="carte" style="max-width:440px;width:92%;max-height:90vh;overflow-y:auto;">
       <h3 style="margin-top:0;">Connexion au repo de données</h3>
       <p class="intro" style="margin-bottom:14px;">
         Les données (écoles, enseignants, choix) sont stockées dans votre repo GitHub <strong>privé</strong>,
