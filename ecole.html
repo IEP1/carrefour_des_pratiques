@@ -31,11 +31,12 @@
     .nom-enseignant { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
   }
   @media print {
+    @page { size: landscape; margin: 10mm; }
     body.mode-impression-rempli #impression-rempli { display: block !important; }
     body.mode-impression-vierge #impression-vierge { display: block !important; }
-    .doc-imprime table { font-size: 0.78rem; }
-    .doc-imprime th, .doc-imprime td { border: 1px solid #999; padding: 5px 7px; }
-    .doc-imprime .case-vierge { width: 28px; height: 18px; border: 1px solid #999; display:inline-block; }
+    .doc-imprime table { font-size: 0.72rem; table-layout: fixed; width: 100%; }
+    .doc-imprime th, .doc-imprime td { border: 1px solid #999; padding: 3px 4px; overflow-wrap: break-word; }
+    .doc-imprime .case-vierge { width: 22px; height: 16px; border: 1px solid #999; display:inline-block; }
   }
 </style>
 </head>

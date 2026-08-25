@@ -6,6 +6,16 @@
 <title>Écoles — Carrefour des pratiques IEP1</title>
 <link rel="icon" href="assets/logo-iep1.png">
 <link rel="stylesheet" href="css/style.css">
+<style>
+  .carte-ecole { position: relative; }
+  .statut-ecole { display: block; margin-top: 6px; font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 20px; }
+  .statut-vide { background: var(--corail-light); color: var(--corail); }
+  .statut-en-cours { background: var(--orange-light); color: #A85A1E; }
+  .statut-complet { background: var(--vert-light); color: #4C6329; }
+  .liste-check-admin { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px 14px; margin: 12px 0; }
+  .liste-check-admin label { font-weight: 400; display: flex; align-items: center; gap: 8px; }
+  .liste-check-admin input { width: auto; }
+</style>
 </head>
 <body>
 <div id="entete-app"></div>
@@ -15,6 +25,33 @@
     <div>
       <h2>Choisissez votre école</h2>
       <p class="intro" style="margin:0;">Aucun mot de passe : cliquez simplement sur votre école pour accéder à la liste de vos enseignants.</p>
+    </div>
+    <button class="btn btn-secondaire btn-sm" id="btn-admin">🔒 Administration</button>
+  </div>
+
+  <div id="panneau-admin" class="carte no-print" style="display:none;">
+    <div id="admin-connexion">
+      <h3 style="margin-top:0;">Accès administrateur</h3>
+      <div class="ligne-champs" style="align-items:flex-end;">
+        <div class="champ" style="max-width:220px;">
+          <label for="admin-mdp">Mot de passe</label>
+          <input type="password" id="admin-mdp">
+        </div>
+        <div class="champ" style="max-width:140px;">
+          <button class="btn btn-secondaire" id="btn-admin-valider" style="width:100%;">Valider</button>
+        </div>
+      </div>
+      <p id="admin-erreur" class="alerte alerte-err" style="display:none;">Mot de passe incorrect.</p>
+    </div>
+    <div id="admin-controles" style="display:none;">
+      <h3 style="margin-top:0;">Réinitialiser des écoles</h3>
+      <p class="intro">Sélectionnez une ou plusieurs écoles puis choisissez une action. Ces actions sont irréversibles et immédiates.</p>
+      <div id="liste-admin-ecoles" class="liste-check-admin"></div>
+      <div class="groupe-btns">
+        <button class="btn btn-secondaire" id="btn-reset-choix">Réinitialiser les choix (garde les enseignants)</button>
+        <button class="btn btn-danger" id="btn-supprimer-enseignants">Supprimer tous les enseignants</button>
+      </div>
+      <pre id="admin-journal" style="margin-top:12px;white-space:pre-wrap;font-size:0.8rem;"></pre>
     </div>
   </div>
 
@@ -46,7 +83,9 @@
 <script>
 injecterEntete('ecoles.html');
 
+const MOT_DE_PASSE_ADMIN = 'IEP1';
 let ecoles = [];
+let statutsParEcole = {}; // id -> { total, complets, enCours }
 
 async function init() {
   try {
@@ -56,6 +95,7 @@ async function init() {
     ecoles = SEED_ECOLES;
   }
   rendre();
+  chargerStatuts();
 }
 
 function afficherAlerte(msg, classe) {
@@ -75,8 +115,44 @@ function rendre() {
     .map(e => `
       <a class="carte-ecole" href="ecole.html?id=${encodeURIComponent(e.id)}">
         🏫<br>${echapper(e.nom)}
+        <span id="statut-${e.id}" class="statut-ecole">…</span>
       </a>
     `).join('');
+}
+
+async function chargerStatuts() {
+  await Promise.all(ecoles.map(async (e) => {
+    try {
+      const data = await Store.chargerEcole(e.id);
+      const enseignants = data.enseignants || [];
+      const total = enseignants.length;
+      const complets = enseignants.filter(x => x.horodatage).length;
+      const enCours = enseignants.filter(x => !x.horodatage && x.choix && x.choix.length > 0).length;
+      statutsParEcole[e.id] = { total, complets, enCours };
+      afficherStatut(e.id);
+    } catch (err) { /* pas grave, on laisse le badge en attente */ }
+  }));
+}
+
+function afficherStatut(id) {
+  const el = document.getElementById('statut-' + id);
+  if (!el) return;
+  const s = statutsParEcole[id];
+  if (!s || s.total === 0) {
+    el.className = 'statut-ecole statut-vide';
+    el.textContent = 'Aucun enseignant';
+    return;
+  }
+  if (s.complets === s.total) {
+    el.className = 'statut-ecole statut-complet';
+    el.textContent = `✓ ${s.complets}/${s.total} complet(s)`;
+  } else if (s.complets > 0 || s.enCours > 0) {
+    el.className = 'statut-ecole statut-en-cours';
+    el.textContent = `${s.complets}/${s.total} complet(s)`;
+  } else {
+    el.className = 'statut-ecole statut-vide';
+    el.textContent = `0/${s.total} rempli(s)`;
+  }
 }
 
 document.getElementById('btn-ajouter-ecole').addEventListener('click', async () => {
@@ -91,12 +167,82 @@ document.getElementById('btn-ajouter-ecole').addEventListener('click', async () 
   try {
     await Store.sauvegarderEcoles(ecoles);
     afficherAlerte('École ajoutée.', 'alerte-ok');
+    chargerStatuts();
   } catch (e) {
     afficherAlerte("Échec de l'enregistrement : " + e.message, 'alerte-err');
   }
 });
 document.getElementById('nouv-ecole-nom').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('btn-ajouter-ecole').click();
+});
+
+/* ===== Administration ===== */
+document.getElementById('btn-admin').addEventListener('click', () => {
+  const panneau = document.getElementById('panneau-admin');
+  panneau.style.display = panneau.style.display === 'none' ? 'block' : 'none';
+});
+
+document.getElementById('btn-admin-valider').addEventListener('click', () => {
+  const champ = document.getElementById('admin-mdp');
+  if (champ.value === MOT_DE_PASSE_ADMIN) {
+    document.getElementById('admin-connexion').style.display = 'none';
+    document.getElementById('admin-controles').style.display = 'block';
+    document.getElementById('liste-admin-ecoles').innerHTML = ecoles
+      .slice().sort((a, b) => a.nom.localeCompare(b.nom))
+      .map(e => `<label><input type="checkbox" class="chk-admin-ecole" value="${e.id}"> ${echapper(e.nom)}</label>`)
+      .join('');
+  } else {
+    document.getElementById('admin-erreur').style.display = 'block';
+  }
+});
+document.getElementById('admin-mdp').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('btn-admin-valider').click();
+});
+
+function ecolesSelectionnees() {
+  return [...document.querySelectorAll('.chk-admin-ecole:checked')].map(c => c.value);
+}
+function adminLog(msg) {
+  document.getElementById('admin-journal').textContent += msg + '\n';
+}
+
+document.getElementById('btn-reset-choix').addEventListener('click', async () => {
+  const ids = ecolesSelectionnees();
+  if (ids.length === 0) { alert('Sélectionnez au moins une école.'); return; }
+  const noms = ids.map(id => ecoles.find(e => e.id === id).nom).join(', ');
+  if (!confirm(`Réinitialiser les choix de : ${noms} ?\nLes enseignants restent, mais leurs choix et horodatages sont effacés.`)) return;
+  document.getElementById('admin-journal').textContent = '';
+  for (const id of ids) {
+    try {
+      const data = await Store.chargerEcole(id);
+      (data.enseignants || []).forEach(e => { e.choix = []; e.horodatage = null; });
+      await Store.sauvegarderEcole(id, data, ecoles.find(e => e.id === id).nom);
+      adminLog(`✓ ${id} : choix réinitialisés.`);
+      const s = statutsParEcole[id];
+      if (s) { s.complets = 0; s.enCours = 0; afficherStatut(id); }
+    } catch (err) {
+      adminLog(`✗ ${id} : échec (${err.message})`);
+    }
+  }
+});
+
+document.getElementById('btn-supprimer-enseignants').addEventListener('click', async () => {
+  const ids = ecolesSelectionnees();
+  if (ids.length === 0) { alert('Sélectionnez au moins une école.'); return; }
+  const noms = ids.map(id => ecoles.find(e => e.id === id).nom).join(', ');
+  if (!confirm(`Supprimer TOUS les enseignants de : ${noms} ?\nCette action vide complètement ces écoles.`)) return;
+  if (!confirm('Vraiment sûr ? Il faudra ressaisir ou réimporter tous les enseignants de ces écoles.')) return;
+  document.getElementById('admin-journal').textContent = '';
+  for (const id of ids) {
+    try {
+      await Store.sauvegarderEcole(id, { enseignants: [] }, ecoles.find(e => e.id === id).nom);
+      adminLog(`✓ ${id} : enseignants supprimés.`);
+      statutsParEcole[id] = { total: 0, complets: 0, enCours: 0 };
+      afficherStatut(id);
+    } catch (err) {
+      adminLog(`✗ ${id} : échec (${err.message})`);
+    }
+  }
 });
 
 init();
