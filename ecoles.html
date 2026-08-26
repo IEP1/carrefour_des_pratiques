@@ -8,10 +8,16 @@
 <link rel="stylesheet" href="css/style.css">
 <style>
   .carte-ecole { position: relative; }
-  .statut-ecole { display: block; margin-top: 6px; font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 20px; }
-  .statut-vide { background: var(--corail-light); color: var(--corail); }
-  .statut-en-cours { background: var(--orange-light); color: #A85A1E; }
-  .statut-complet { background: var(--vert-light); color: #4C6329; }
+  .statut-ecole { position: relative; display: block; margin-top: 6px; height: 22px; border-radius: 20px; overflow: hidden; }
+  .statut-ecole .statut-barre { position: absolute; inset: 0; width: 0%; transition: width .3s; }
+  .statut-ecole .statut-texte { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; height: 100%; font-size: 0.72rem; font-weight: 700; padding: 0 8px; }
+  .statut-vide { background: var(--corail-light); }
+  .statut-vide .statut-texte { color: var(--corail); }
+  .statut-en-cours { background: var(--orange-light); }
+  .statut-en-cours .statut-barre { background: var(--orange); }
+  .statut-en-cours .statut-texte { color: #7A3E12; }
+  .statut-complet { background: var(--vert-light); }
+  .statut-complet .statut-texte { color: #4C6329; }
   .liste-check-admin { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px 14px; margin: 12px 0; }
   .liste-check-admin label { font-weight: 400; display: flex; align-items: center; gap: 8px; }
   .liste-check-admin input { width: auto; }
@@ -115,17 +121,14 @@ function rendre() {
     .map(e => `
       <a class="carte-ecole" href="ecole.html?id=${encodeURIComponent(e.id)}">
         🏫<br>${echapper(e.nom)}
-        <span id="statut-${e.id}" class="statut-ecole">…</span>
+        <span id="statut-${e.id}" class="statut-ecole"><span class="statut-barre"></span><span class="statut-texte">…</span></span>
       </a>
     `).join('');
 }
 
 async function chargerStatuts() {
   if (!ghConfig.isConfigured()) {
-    ecoles.forEach(e => {
-      const el = document.getElementById('statut-' + e.id);
-      if (el) { el.className = 'statut-ecole statut-vide'; el.textContent = '⚙ non connecté'; }
-    });
+    ecoles.forEach(e => definirBadge(e.id, 'statut-vide', '⚙ non connecté', 0));
     return;
   }
   await Promise.all(ecoles.map(async (e) => {
@@ -137,20 +140,35 @@ async function chargerStatuts() {
       statutsParEcole[e.id] = { total, complets };
       afficherStatut(e.id);
     } catch (err) {
-      const el = document.getElementById('statut-' + e.id);
-      if (el) { el.className = 'statut-ecole statut-vide'; el.textContent = 'Erreur'; el.title = err.message; }
+      definirBadge(e.id, 'statut-vide', 'Erreur', 0, err.message);
     }
   }));
 }
 
-function afficherStatut(id) {
+/* Le pourcentage n'est jamais affiché en chiffres : il ne sert qu'à remplir la barre visuelle. */
+function definirBadge(id, classe, texte, pourcentageBarre, titre) {
   const el = document.getElementById('statut-' + id);
   if (!el) return;
+  el.className = 'statut-ecole ' + classe;
+  el.querySelector('.statut-barre').style.width = (pourcentageBarre || 0) + '%';
+  el.querySelector('.statut-texte').textContent = texte;
+  if (titre) el.title = titre;
+}
+
+function afficherStatut(id) {
   const s = statutsParEcole[id];
   const total = s ? s.total : 0;
   const complets = s ? s.complets : 0;
-  el.className = 'statut-ecole ' + (total === 0 ? 'statut-vide' : complets === total ? 'statut-complet' : complets > 0 ? 'statut-en-cours' : 'statut-vide');
-  el.textContent = (complets === total && total > 0 ? '✓ ' : '') + `(${complets}/${total})`;
+  const pourcentage = total > 0 ? Math.round((complets / total) * 100) : 0;
+  if (total === 0) {
+    definirBadge(id, 'statut-vide', `(0/0)`, 0);
+  } else if (complets === total) {
+    definirBadge(id, 'statut-complet', `✓ (${complets}/${total})`, 100);
+  } else if (complets > 0) {
+    definirBadge(id, 'statut-en-cours', `(${complets}/${total})`, pourcentage);
+  } else {
+    definirBadge(id, 'statut-vide', `(0/${total})`, 0);
+  }
 }
 
 document.getElementById('btn-ajouter-ecole').addEventListener('click', async () => {

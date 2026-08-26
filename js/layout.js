@@ -23,6 +23,17 @@ function injecterEntete(pageActive) {
     </header>
   `;
   document.getElementById('btn-connexion-donnees').addEventListener('click', ouvrirModaleConnexion);
+  // Si la page courante a une sauvegarde en attente (voir ecole.html), on l'attend avant de
+  // suivre un lien du menu, pour ne jamais perdre une saisie faite juste avant de cliquer.
+  cible.querySelectorAll('nav a').forEach(a => {
+    a.addEventListener('click', async (e) => {
+      if (typeof window.assurerSauvegarde === 'function') {
+        e.preventDefault();
+        await window.assurerSauvegarde();
+        location.href = a.href;
+      }
+    });
+  });
   injecterModaleConnexion();
   majPastilleConnexion();
 }

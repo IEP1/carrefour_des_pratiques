@@ -44,7 +44,7 @@
 <div id="entete-app"></div>
 
 <main>
-  <p class="no-print"><a href="ecoles.html">← Toutes les écoles</a></p>
+  <p class="no-print"><a href="ecoles.html" id="lien-retour-ecoles">← Toutes les écoles</a></p>
 
   <div class="barre-actions no-print">
     <div>
@@ -225,18 +225,42 @@ async function supprimerEnseignant(id) {
   planifierSauvegarde();
 }
 
+let sauvegardeEnVol = Promise.resolve();
+
 function planifierSauvegarde() {
-  afficherAlerte('Enregistrement…', 'alerte-info');
+  afficherAlerte('Modifications non enregistrées…', 'alerte-info');
   clearTimeout(minuteurSauvegarde);
-  minuteurSauvegarde = setTimeout(async () => {
+  minuteurSauvegarde = setTimeout(declencherSauvegarde, 400);
+}
+
+function declencherSauvegarde() {
+  minuteurSauvegarde = null;
+  sauvegardeEnVol = (async () => {
     try {
       await Store.sauvegarderEcole(ecoleId, donneesEcole, ecole.nom);
       afficherAlerte('Enregistré ✓', 'alerte-ok');
     } catch (e) {
       afficherAlerte("Échec de l'enregistrement : " + e.message, 'alerte-err');
     }
-  }, 700);
+  })();
+  return sauvegardeEnVol;
 }
+
+/* Attend qu'une sauvegarde en attente (debounce) ou en cours se termine avant de quitter la page,
+ * pour ne jamais perdre une saisie faite juste avant de cliquer sur un lien de navigation. */
+async function assurerSauvegarde() {
+  if (minuteurSauvegarde) {
+    clearTimeout(minuteurSauvegarde);
+    await declencherSauvegarde();
+  } else {
+    await sauvegardeEnVol;
+  }
+}
+window.assurerSauvegarde = assurerSauvegarde;
+
+window.addEventListener('beforeunload', (e) => {
+  if (minuteurSauvegarde) { e.preventDefault(); e.returnValue = ''; }
+});
 
 /* ===== Impression : choix actuels ===== */
 document.getElementById('btn-imprimer-rempli').addEventListener('click', () => {
@@ -290,6 +314,12 @@ function imprimer(classe) {
   window.print();
   setTimeout(() => document.body.classList.remove(classe), 500);
 }
+
+document.getElementById('lien-retour-ecoles').addEventListener('click', async (e) => {
+  e.preventDefault();
+  await assurerSauvegarde();
+  location.href = 'ecoles.html';
+});
 
 init();
 </script>
