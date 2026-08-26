@@ -85,7 +85,7 @@ injecterEntete('ecoles.html');
 
 const MOT_DE_PASSE_ADMIN = 'IEP1';
 let ecoles = [];
-let statutsParEcole = {}; // id -> { total, complets, enCours }
+let statutsParEcole = {}; // id -> { total, complets }
 
 async function init() {
   try {
@@ -121,16 +121,25 @@ function rendre() {
 }
 
 async function chargerStatuts() {
+  if (!ghConfig.isConfigured()) {
+    ecoles.forEach(e => {
+      const el = document.getElementById('statut-' + e.id);
+      if (el) { el.className = 'statut-ecole statut-vide'; el.textContent = '⚙ non connecté'; }
+    });
+    return;
+  }
   await Promise.all(ecoles.map(async (e) => {
     try {
       const data = await Store.chargerEcole(e.id);
       const enseignants = data.enseignants || [];
       const total = enseignants.length;
       const complets = enseignants.filter(x => x.horodatage).length;
-      const enCours = enseignants.filter(x => !x.horodatage && x.choix && x.choix.length > 0).length;
-      statutsParEcole[e.id] = { total, complets, enCours };
+      statutsParEcole[e.id] = { total, complets };
       afficherStatut(e.id);
-    } catch (err) { /* pas grave, on laisse le badge en attente */ }
+    } catch (err) {
+      const el = document.getElementById('statut-' + e.id);
+      if (el) { el.className = 'statut-ecole statut-vide'; el.textContent = 'Erreur'; el.title = err.message; }
+    }
   }));
 }
 
@@ -138,21 +147,10 @@ function afficherStatut(id) {
   const el = document.getElementById('statut-' + id);
   if (!el) return;
   const s = statutsParEcole[id];
-  if (!s || s.total === 0) {
-    el.className = 'statut-ecole statut-vide';
-    el.textContent = 'Aucun enseignant';
-    return;
-  }
-  if (s.complets === s.total) {
-    el.className = 'statut-ecole statut-complet';
-    el.textContent = `✓ ${s.complets}/${s.total} complet(s)`;
-  } else if (s.complets > 0 || s.enCours > 0) {
-    el.className = 'statut-ecole statut-en-cours';
-    el.textContent = `${s.complets}/${s.total} complet(s)`;
-  } else {
-    el.className = 'statut-ecole statut-vide';
-    el.textContent = `0/${s.total} rempli(s)`;
-  }
+  const total = s ? s.total : 0;
+  const complets = s ? s.complets : 0;
+  el.className = 'statut-ecole ' + (total === 0 ? 'statut-vide' : complets === total ? 'statut-complet' : complets > 0 ? 'statut-en-cours' : 'statut-vide');
+  el.textContent = (complets === total && total > 0 ? '✓ ' : '') + `(${complets}/${total})`;
 }
 
 document.getElementById('btn-ajouter-ecole').addEventListener('click', async () => {
@@ -219,7 +217,7 @@ document.getElementById('btn-reset-choix').addEventListener('click', async () =>
       await Store.sauvegarderEcole(id, data, ecoles.find(e => e.id === id).nom);
       adminLog(`✓ ${id} : choix réinitialisés.`);
       const s = statutsParEcole[id];
-      if (s) { s.complets = 0; s.enCours = 0; afficherStatut(id); }
+      if (s) { s.complets = 0; afficherStatut(id); }
     } catch (err) {
       adminLog(`✗ ${id} : échec (${err.message})`);
     }
@@ -237,7 +235,7 @@ document.getElementById('btn-supprimer-enseignants').addEventListener('click', a
     try {
       await Store.sauvegarderEcole(id, { enseignants: [] }, ecoles.find(e => e.id === id).nom);
       adminLog(`✓ ${id} : enseignants supprimés.`);
-      statutsParEcole[id] = { total: 0, complets: 0, enCours: 0 };
+      statutsParEcole[id] = { total: 0, complets: 0 };
       afficherStatut(id);
     } catch (err) {
       adminLog(`✗ ${id} : échec (${err.message})`);
