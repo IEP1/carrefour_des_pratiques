@@ -225,7 +225,10 @@ async function supprimerEnseignant(id) {
   planifierSauvegarde();
 }
 
-let sauvegardeEnVol = Promise.resolve();
+// Les sauvegardes sont chaînées (jamais deux en parallèle) pour éviter que deux écritures
+// se doublent et provoquent un faux conflit GitHub (409) entre deux sauvegardes de cette
+// page elle-même plutôt qu'avec un autre appareil.
+let chaineSauvegarde = Promise.resolve();
 
 function planifierSauvegarde() {
   afficherAlerte('Modifications non enregistrées…', 'alerte-info');
@@ -235,26 +238,29 @@ function planifierSauvegarde() {
 
 function declencherSauvegarde() {
   minuteurSauvegarde = null;
-  sauvegardeEnVol = (async () => {
-    try {
-      await Store.sauvegarderEcole(ecoleId, donneesEcole, ecole.nom);
-      afficherAlerte('Enregistré ✓', 'alerte-ok');
-    } catch (e) {
-      afficherAlerte("Échec de l'enregistrement : " + e.message, 'alerte-err');
-    }
-  })();
-  return sauvegardeEnVol;
+  chaineSauvegarde = chaineSauvegarde.then(sauvegarderMaintenant, sauvegarderMaintenant);
+  return chaineSauvegarde;
+}
+
+async function sauvegarderMaintenant() {
+  try {
+    await Store.sauvegarderEcole(ecoleId, donneesEcole, ecole.nom);
+    afficherAlerte('Enregistré ✓', 'alerte-ok');
+  } catch (e) {
+    afficherAlerte("Échec de l'enregistrement : " + e.message + " — vos derniers changements n'ont peut-être pas été pris en compte, revenez sur cette page pour vérifier.", 'alerte-err');
+  }
 }
 
 /* Attend qu'une sauvegarde en attente (debounce) ou en cours se termine avant de quitter la page,
- * pour ne jamais perdre une saisie faite juste avant de cliquer sur un lien de navigation. */
+ * pour ne jamais perdre une saisie faite juste avant de cliquer sur un lien de navigation.
+ * Plafonné à 6s : mieux vaut naviguer avec un enregistrement possiblement pas fini plutôt que
+ * de bloquer la personne sur la page en cas de souci réseau. */
 async function assurerSauvegarde() {
   if (minuteurSauvegarde) {
     clearTimeout(minuteurSauvegarde);
-    await declencherSauvegarde();
-  } else {
-    await sauvegardeEnVol;
+    declencherSauvegarde();
   }
+  await Promise.race([chaineSauvegarde, new Promise(r => setTimeout(r, 6000))]);
 }
 window.assurerSauvegarde = assurerSauvegarde;
 
