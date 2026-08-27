@@ -54,8 +54,11 @@
     <div class="groupe-btns">
       <button class="btn btn-secondaire" id="btn-imprimer-vierge">🖨 Feuille vierge (papier)</button>
       <button class="btn btn-navy" id="btn-imprimer-rempli">🖨 Imprimer les choix</button>
+      <button class="btn btn-primaire" id="btn-enregistrer">💾 Enregistrer</button>
     </div>
   </div>
+
+  <button class="btn btn-primaire no-print" id="btn-enregistrer-flottant" style="position:fixed;bottom:20px;right:20px;z-index:50;box-shadow:var(--ombre-lg);display:none;">💾 Enregistrer</button>
 
   <div class="carte no-print">
     <h3 style="margin-top:0;">Ajouter un enseignant</h3>
@@ -110,7 +113,6 @@ const params = new URLSearchParams(location.search);
 const ecoleId = params.get('id');
 
 let ecole = null, ateliers = [], config = null, donneesEcole = { enseignants: [] };
-let minuteurSauvegarde = null;
 
 async function init() {
   if (!ecoleId) { document.body.innerHTML = '<p style="padding:20px;">École introuvable.</p>'; return; }
@@ -192,7 +194,7 @@ function basculerChoix(ensId, atelierId) {
     ens.horodatage = ens.horodatage; // on ne retire pas l'horodatage déjà acquis si l'enseignant modifie ensuite
   }
   rendreGrille();
-  planifierSauvegarde();
+  marquerModifie();
 }
 
 document.getElementById('btn-ajouter-enseignant').addEventListener('click', () => {
@@ -204,7 +206,7 @@ document.getElementById('btn-ajouter-enseignant').addEventListener('click', () =
   champNom.value = '';
   champNom.focus();
   rendreGrille();
-  planifierSauvegarde();
+  marquerModifie();
 });
 document.getElementById('nouv-nom').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('btn-ajouter-enseignant').click();
@@ -214,7 +216,7 @@ function changerCycle(ensId, cycle) {
   const ens = donneesEcole.enseignants.find(e => e.id === ensId);
   if (!ens) return;
   ens.cycle = cycle;
-  planifierSauvegarde();
+  marquerModifie();
 }
 
 async function supprimerEnseignant(id) {
@@ -222,22 +224,23 @@ async function supprimerEnseignant(id) {
   if (!ens || !confirm(`Retirer ${ens.nom} ?`)) return;
   donneesEcole.enseignants = donneesEcole.enseignants.filter(e => e.id !== id);
   rendreGrille();
-  planifierSauvegarde();
+  marquerModifie();
 }
 
-// Les sauvegardes sont chaînées (jamais deux en parallèle) pour éviter que deux écritures
-// se doublent et provoquent un faux conflit GitHub (409) entre deux sauvegardes de cette
-// page elle-même plutôt qu'avec un autre appareil.
+// Sauvegarde explicite (bouton), pas automatique : plus simple et plus fiable que le
+// déclenchement à chaque clic. Les sauvegardes restent chaînées (jamais deux en parallèle)
+// pour éviter un faux conflit GitHub (409) entre deux écritures de cette page elle-même.
 let chaineSauvegarde = Promise.resolve();
+let modifsNonEnregistrees = false;
 
-function planifierSauvegarde() {
-  afficherAlerte('Modifications non enregistrées…', 'alerte-info');
-  clearTimeout(minuteurSauvegarde);
-  minuteurSauvegarde = setTimeout(declencherSauvegarde, 400);
+function marquerModifie() {
+  modifsNonEnregistrees = true;
+  afficherAlerte('Modifications non enregistrées — cliquez sur 💾 Enregistrer.', 'alerte-warn');
+  document.getElementById('btn-enregistrer-flottant').style.display = 'inline-flex';
 }
 
 function declencherSauvegarde() {
-  minuteurSauvegarde = null;
+  modifsNonEnregistrees = false;
   chaineSauvegarde = chaineSauvegarde.then(sauvegarderMaintenant, sauvegarderMaintenant);
   return chaineSauvegarde;
 }
@@ -246,26 +249,26 @@ async function sauvegarderMaintenant() {
   try {
     await Store.sauvegarderEcole(ecoleId, donneesEcole, ecole.nom);
     afficherAlerte('Enregistré ✓', 'alerte-ok');
+    document.getElementById('btn-enregistrer-flottant').style.display = 'none';
   } catch (e) {
-    afficherAlerte("Échec de l'enregistrement : " + e.message + " — vos derniers changements n'ont peut-être pas été pris en compte, revenez sur cette page pour vérifier.", 'alerte-err');
+    modifsNonEnregistrees = true; // l'échec remet le drapeau : rien n'est perdu, il faudra réessayer
+    afficherAlerte("Échec de l'enregistrement : " + e.message, 'alerte-err');
   }
 }
 
-/* Attend qu'une sauvegarde en attente (debounce) ou en cours se termine avant de quitter la page,
- * pour ne jamais perdre une saisie faite juste avant de cliquer sur un lien de navigation.
- * Plafonné à 6s : mieux vaut naviguer avec un enregistrement possiblement pas fini plutôt que
- * de bloquer la personne sur la page en cas de souci réseau. */
+document.getElementById('btn-enregistrer').addEventListener('click', declencherSauvegarde);
+document.getElementById('btn-enregistrer-flottant').addEventListener('click', declencherSauvegarde);
+
+/* Filet de sécurité : si on quitte la page sans avoir cliqué "Enregistrer", on sauvegarde quand
+ * même automatiquement, plafonné à 6s pour ne jamais bloquer la navigation en cas de souci réseau. */
 async function assurerSauvegarde() {
-  if (minuteurSauvegarde) {
-    clearTimeout(minuteurSauvegarde);
-    declencherSauvegarde();
-  }
+  if (modifsNonEnregistrees) declencherSauvegarde();
   await Promise.race([chaineSauvegarde, new Promise(r => setTimeout(r, 6000))]);
 }
 window.assurerSauvegarde = assurerSauvegarde;
 
 window.addEventListener('beforeunload', (e) => {
-  if (minuteurSauvegarde) { e.preventDefault(); e.returnValue = ''; }
+  if (modifsNonEnregistrees) { e.preventDefault(); e.returnValue = ''; }
 });
 
 /* ===== Impression : choix actuels ===== */
