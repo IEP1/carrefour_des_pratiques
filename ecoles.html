@@ -127,10 +127,6 @@ function rendre() {
 }
 
 async function chargerStatuts() {
-  if (!ghConfig.isConfigured()) {
-    ecoles.forEach(e => definirBadge(e.id, 'statut-vide', '⚙ non connecté', 0));
-    return;
-  }
   await Promise.all(ecoles.map(async (e) => {
     try {
       const data = await Store.chargerEcole(e.id);

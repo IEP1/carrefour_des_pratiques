@@ -9,3 +9,6 @@ desktop.ini
 # utilisé une seule fois en local pour peupler le repo privé de données.
 js/import-data.local.js
 import.html
+
+# État local de la CLI Netlify (aucun secret dedans, mais propre à chaque machine)
+.netlify/

@@ -1,104 +1,57 @@
 /*
- * Couche de stockage : lit/écrit les données de l'appli dans un repo GitHub
- * privé, via l'API REST "contents". Chaque école a son propre fichier JSON
- * pour éviter les conflits d'écriture entre directeurs qui travaillent en
- * même temps sur des écoles différentes.
+ * Couche de stockage : lit/écrit les données via la fonction serveur Netlify (/api/data),
+ * qui parle elle-même à l'API GitHub avec un token gardé côté serveur (variable d'environnement
+ * Netlify — voir netlify/functions/data.js). Plus aucun token ni configuration côté navigateur :
+ * l'accès à l'appli se fait uniquement en connaissant le lien du site.
  *
- * Le token (Personal Access Token à portée restreinte au repo de données)
- * est saisi une fois par appareil et reste uniquement dans le localStorage
- * du navigateur — il n'est jamais transmis ailleurs qu'à api.github.com.
+ * API_BASE est vide sur le site déployé (chemins relatifs /api/data). L'outil d'import local
+ * (import.html, jamais publié) le renseigne avec l'URL complète du site Netlify pour pouvoir
+ * appeler la même fonction depuis un fichier ouvert en local.
  */
-const GH_API = 'https://api.github.com';
-
-const ghConfig = {
-  get owner() { return localStorage.getItem('cdp_data_owner') || ''; },
-  get repo() { return localStorage.getItem('cdp_data_repo') || ''; },
-  get branch() { return localStorage.getItem('cdp_data_branch') || 'main'; },
-  get token() { return localStorage.getItem('cdp_data_token') || ''; },
-  set(owner, repo, branch, token) {
-    localStorage.setItem('cdp_data_owner', owner);
-    localStorage.setItem('cdp_data_repo', repo);
-    localStorage.setItem('cdp_data_branch', branch || 'main');
-    localStorage.setItem('cdp_data_token', token);
-  },
-  clear() {
-    ['cdp_data_owner', 'cdp_data_repo', 'cdp_data_branch', 'cdp_data_token'].forEach(k => localStorage.removeItem(k));
-  },
-  isConfigured() { return !!(this.owner && this.repo && this.token); }
-};
-
-function b64EncodeUnicode(str) {
-  return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode('0x' + p1)));
-}
-function b64DecodeUnicode(str) {
-  return decodeURIComponent(atob(str).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+function apiBase() {
+  return (typeof window !== 'undefined' && window.CDP_API_BASE) || '';
 }
 
-async function ghRequest(path, options = {}) {
-  if (!ghConfig.isConfigured()) throw new Error('Stockage des données non connecté — cliquez sur ⚙ Données en haut de page pour renseigner le repo GitHub privé.');
-  const url = `${GH_API}/repos/${ghConfig.owner}/${ghConfig.repo}/contents/${path}`;
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      'Accept': 'application/vnd.github+json',
-      'Authorization': `Bearer ${ghConfig.token}`,
-      ...(options.headers || {})
-    }
-  });
-  return res;
-}
-
-/** Lit un fichier JSON du repo de données. Retourne {data, sha} ou {data: fallback, sha: null} si absent. */
+/** Lit un fichier JSON. Retourne {data, sha} — sha vaut null si le fichier n'existe pas encore
+ *  (dans ce cas data vaut le "fallback" fourni), ou une valeur non-nulle sinon (peu importe
+ *  laquelle : le serveur gère lui-même le sha GitHub, le client n'en a plus besoin). */
 async function chargerJSON(path, fallback) {
-  if (!ghConfig.isConfigured()) return { data: fallback, sha: null };
   try {
-    const res = await ghRequest(`${path}?ref=${ghConfig.branch}`);
+    const res = await fetch(`${apiBase()}/api/data?path=${encodeURIComponent(path)}`);
     if (res.status === 404) return { data: fallback, sha: null };
-    if (!res.ok) throw new Error(`Erreur GitHub ${res.status} sur ${path}`);
-    const json = await res.json();
-    const contenu = b64DecodeUnicode(json.content.replace(/\n/g, ''));
-    return { data: JSON.parse(contenu), sha: json.sha };
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Erreur serveur ${res.status} sur ${path}`);
+    }
+    const data = await res.json();
+    return { data, sha: 'ok' };
   } catch (e) {
     console.error('chargerJSON', path, e);
     throw e;
   }
 }
 
-/** Écrit un fichier JSON dans le repo de données (crée ou met à jour). */
+/** Écrit un fichier JSON (le serveur crée ou met à jour, et gère les conflits d'écriture). */
 async function sauvegarderJSON(path, data, message) {
-  if (!ghConfig.isConfigured()) throw new Error('Stockage des données non connecté — cliquez sur ⚙ Données en haut de page pour renseigner le repo GitHub privé.');
-  // On relit le sha juste avant d'écrire pour limiter les conflits (dernier écrit gagne sinon 409).
-  let sha = null;
-  try {
-    const res = await ghRequest(`${path}?ref=${ghConfig.branch}`);
-    if (res.ok) sha = (await res.json()).sha;
-  } catch (e) { /* fichier probablement inexistant, on le crée */ }
-
-  const body = {
-    message: message || `Mise à jour ${path}`,
-    content: b64EncodeUnicode(JSON.stringify(data, null, 2)),
-    branch: ghConfig.branch
-  };
-  if (sha) body.sha = sha;
-
-  const res = await ghRequest(path, { method: 'PUT', body: JSON.stringify(body) });
-  if (res.status === 409) {
-    throw new Error('CONFLIT: quelqu\'un d\'autre vient de modifier ce fichier. Rechargez la page et recommencez.');
-  }
+  const res = await fetch(`${apiBase()}/api/data?path=${encodeURIComponent(path)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...(message ? { 'X-Message': message } : {}) },
+    body: JSON.stringify(data)
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(`Échec de sauvegarde (${res.status}) : ${err.message || ''}`);
+    throw new Error(err.error || `Échec de sauvegarde (${res.status})`);
   }
   return res.json();
 }
 
+// Conservés pour compatibilité avec le code existant : avant le proxy serveur, ces fonctions
+// vérifiaient qu'un token GitHub était configuré côté navigateur. Ce n'est plus nécessaire.
+const ghConfig = { isConfigured: () => true };
 async function testerConnexion() {
-  if (!ghConfig.isConfigured()) return false;
   try {
-    const res = await fetch(`${GH_API}/repos/${ghConfig.owner}/${ghConfig.repo}`, {
-      headers: { 'Accept': 'application/vnd.github+json', 'Authorization': `Bearer ${ghConfig.token}` }
-    });
-    return res.ok;
+    const res = await fetch(`${apiBase()}/api/data?path=config.json`);
+    return res.ok || res.status === 404;
   } catch (e) {
     return false;
   }
