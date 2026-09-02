@@ -91,11 +91,15 @@ injecterEntete('ecoles.html');
 
 const MOT_DE_PASSE_ADMIN = 'IEP1';
 let ecoles = [];
-let statutsParEcole = {}; // id -> { total, complets }
+let nombreChoix = 5;
+let statutsParEcole = {}; // id -> { total, complets, progression }
 
 async function init() {
   try {
-    ecoles = await Store.chargerEcoles();
+    [ecoles, nombreChoix] = await Promise.all([
+      Store.chargerEcoles(),
+      Store.chargerConfig().then(c => c.nombreChoix)
+    ]);
   } catch (e) {
     afficherAlerte("Impossible de charger la liste des écoles (" + e.message + ").", 'alerte-err');
     ecoles = SEED_ECOLES;
@@ -133,7 +137,12 @@ async function chargerStatuts() {
       const enseignants = data.enseignants || [];
       const total = enseignants.length;
       const complets = enseignants.filter(x => x.horodatage).length;
-      statutsParEcole[e.id] = { total, complets };
+      // Progression moyenne (0 à 1) : compte aussi les choix partiels, pas seulement les 5/5,
+      // pour que la barre bouge dès qu'un directeur commence à saisir, pas seulement à la fin.
+      const progression = total > 0
+        ? enseignants.reduce((s, x) => s + Math.min((x.choix || []).length, nombreChoix) / nombreChoix, 0) / total
+        : 0;
+      statutsParEcole[e.id] = { total, complets, progression };
       afficherStatut(e.id);
     } catch (err) {
       definirBadge(e.id, 'statut-vide', 'Erreur', 0, err.message);
@@ -155,12 +164,12 @@ function afficherStatut(id) {
   const s = statutsParEcole[id];
   const total = s ? s.total : 0;
   const complets = s ? s.complets : 0;
-  const pourcentage = total > 0 ? Math.round((complets / total) * 100) : 0;
+  const pourcentage = s ? Math.round(s.progression * 100) : 0;
   if (total === 0) {
     definirBadge(id, 'statut-vide', `(0/0)`, 0);
   } else if (complets === total) {
     definirBadge(id, 'statut-complet', `✓ (${complets}/${total})`, 100);
-  } else if (complets > 0) {
+  } else if (pourcentage > 0) {
     definirBadge(id, 'statut-en-cours', `(${complets}/${total})`, pourcentage);
   } else {
     definirBadge(id, 'statut-vide', `(0/${total})`, 0);
@@ -231,7 +240,7 @@ document.getElementById('btn-reset-choix').addEventListener('click', async () =>
       await Store.sauvegarderEcole(id, data, ecoles.find(e => e.id === id).nom);
       adminLog(`✓ ${id} : choix réinitialisés.`);
       const s = statutsParEcole[id];
-      if (s) { s.complets = 0; afficherStatut(id); }
+      if (s) { s.complets = 0; s.progression = 0; afficherStatut(id); }
     } catch (err) {
       adminLog(`✗ ${id} : échec (${err.message})`);
     }
@@ -249,7 +258,7 @@ document.getElementById('btn-supprimer-enseignants').addEventListener('click', a
     try {
       await Store.sauvegarderEcole(id, { enseignants: [] }, ecoles.find(e => e.id === id).nom);
       adminLog(`✓ ${id} : enseignants supprimés.`);
-      statutsParEcole[id] = { total: 0, complets: 0 };
+      statutsParEcole[id] = { total: 0, complets: 0, progression: 0 };
       afficherStatut(id);
     } catch (err) {
       adminLog(`✗ ${id} : échec (${err.message})`);
