@@ -7,9 +7,10 @@
 <link rel="icon" href="assets/logo-iep1.png">
 <link rel="stylesheet" href="css/style.css">
 <style>
-  .liste-check { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 6px 14px; margin: 10px 0; }
-  .liste-check label { font-weight: 400; display: flex; align-items: center; gap: 8px; }
-  .liste-check input { width: auto; }
+  .col-session { text-align: center; white-space: nowrap; }
+  .col-session small { display: block; color: var(--texte-muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
+  .col-session .nb-part { display: block; font-size: 0.75rem; color: var(--texte-muted); margin-top: 2px; }
+  .col-session input { width: auto; }
   #impression-emargement { display: none; }
   @media print {
     #impression-emargement { display: block !important; }
@@ -28,23 +29,34 @@
 <main>
   <div class="no-print">
     <h2>Feuilles d'émargation</h2>
-    <p class="intro">Sélectionnez un ou plusieurs ateliers : une feuille sera générée pour chacune de leurs 3 sessions (nom de l'atelier, animateur, liste des enseignants attendus).</p>
+    <p class="intro">Cochez, pour chaque atelier et chaque créneau, les feuilles à imprimer (nom de l'atelier, animateur, liste des enseignants attendus) — ou utilisez l'impression rapide par créneau ci-dessous.</p>
   </div>
 
   <div id="alerte-zone"></div>
 
   <div class="carte no-print">
     <div class="barre-actions" style="margin-bottom:6px;">
-      <h3 style="margin:0;">Ateliers à imprimer</h3>
+      <h3 style="margin:0;">Ateliers et créneaux à imprimer</h3>
       <div class="groupe-btns">
-        <button class="btn btn-secondaire btn-sm" id="btn-tout">Tout sélectionner</button>
-        <button class="btn btn-secondaire btn-sm" id="btn-aucun">Tout désélectionner</button>
+        <button class="btn btn-secondaire btn-sm" id="btn-tout">Tout cocher</button>
+        <button class="btn btn-secondaire btn-sm" id="btn-aucun">Tout décocher</button>
       </div>
     </div>
-    <div id="liste-ateliers" class="liste-check"><p>Chargement…</p></div>
-    <div class="groupe-btns" style="margin-top:14px;">
-      <button class="btn btn-primaire" id="btn-generer">🖨 Générer et imprimer les feuilles sélectionnées</button>
+    <div class="table-wrap">
+      <table id="tableau-ateliers">
+        <thead><tr id="entete-tableau"><th>Atelier</th><th>Intervenant(s)</th></tr></thead>
+        <tbody id="corps-tableau"><tr><td colspan="5">Chargement…</td></tr></tbody>
+      </table>
     </div>
+    <div class="groupe-btns" style="margin-top:14px;">
+      <button class="btn btn-primaire" id="btn-generer">🖨 Imprimer la sélection cochée</button>
+    </div>
+  </div>
+
+  <div class="carte no-print">
+    <h3 style="margin-top:0;">Impression rapide par créneau</h3>
+    <p class="intro" style="margin-bottom:10px;">Génère directement les feuilles de tous les ateliers ayant des participants, pour le(s) créneau(x) choisi(s).</p>
+    <div class="groupe-btns" id="boutons-rapides"></div>
   </div>
 
   <div id="impression-emargement"></div>
@@ -72,11 +84,12 @@ async function init() {
   }
   if (!resultat) {
     afficherAlerte('Aucune répartition n\'a encore été calculée. Rendez-vous sur la page « Répartition » d\'abord.', 'alerte-warn');
-    document.getElementById('liste-ateliers').innerHTML = '';
+    document.getElementById('corps-tableau').innerHTML = '';
     document.getElementById('btn-generer').disabled = true;
     return;
   }
-  rendreListe();
+  rendreTableau();
+  rendreBoutonsRapides();
 }
 
 function afficherAlerte(msg, classe) {
@@ -86,60 +99,96 @@ function echapper(s) {
   const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML;
 }
 
-function nbParticipantsAtelier(atelierId) {
-  return config.sessions.reduce((total, s) => {
-    const g = resultat.parSession[s.id].find(x => x.atelierId === atelierId);
-    return total + (g ? g.participants.length : 0);
-  }, 0);
+function nbParticipants(atelierId, sessionId) {
+  const g = resultat.parSession[sessionId].find(x => x.atelierId === atelierId);
+  return g ? g.participants.length : 0;
 }
 
-function rendreListe() {
-  document.getElementById('liste-ateliers').innerHTML = ateliers.map(a => `
-    <label>
-      <input type="checkbox" class="chk-atelier" value="${a.id}" ${nbParticipantsAtelier(a.id) > 0 ? 'checked' : ''}>
-      ${echapper(a.titre)} <span style="color:var(--texte-muted);">(${nbParticipantsAtelier(a.id)} participant(s))</span>
-    </label>
+function rendreTableau() {
+  document.getElementById('entete-tableau').innerHTML =
+    '<th>Atelier</th><th>Intervenant(s)</th>' +
+    config.sessions.map((s, i) => `<th class="col-session">Créneau ${i + 1}<small>${echapper(s.horaire)}</small></th>`).join('');
+
+  document.getElementById('corps-tableau').innerHTML = ateliers.map(a => `
+    <tr>
+      <td><strong>${echapper(a.titre)}</strong></td>
+      <td>${a.intervenants.map(echapper).join(', ') || '—'}</td>
+      ${config.sessions.map(s => {
+        const n = nbParticipants(a.id, s.id);
+        return `<td class="col-session">
+          <input type="checkbox" class="chk-session" data-atelier="${a.id}" data-session="${s.id}" ${n > 0 ? 'checked' : ''}>
+          <span class="nb-part">(${n})</span>
+        </td>`;
+      }).join('')}
+    </tr>
   `).join('');
 }
 
+function rendreBoutonsRapides() {
+  const zone = document.getElementById('boutons-rapides');
+  zone.innerHTML =
+    config.sessions.map((s, i) => `<button class="btn btn-secondaire btn-imprimer-rapide" data-session="${s.id}">🖨 Créneau ${i + 1} uniquement <span style="opacity:.7;">(${echapper(s.horaire)})</span></button>`).join('') +
+    `<button class="btn btn-navy" id="btn-imprimer-tout">🖨 Tous les émargements</button>`;
+
+  zone.querySelectorAll('.btn-imprimer-rapide').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sessionId = Number(btn.dataset.session);
+      const paires = ateliers
+        .filter(a => nbParticipants(a.id, sessionId) > 0)
+        .map(a => ({ atelierId: a.id, sessionId }));
+      genererEtImprimer(paires);
+    });
+  });
+  document.getElementById('btn-imprimer-tout').addEventListener('click', () => {
+    const paires = [];
+    ateliers.forEach(a => config.sessions.forEach(s => {
+      if (nbParticipants(a.id, s.id) > 0) paires.push({ atelierId: a.id, sessionId: s.id });
+    }));
+    genererEtImprimer(paires);
+  });
+}
+
 document.getElementById('btn-tout').addEventListener('click', () => {
-  document.querySelectorAll('.chk-atelier').forEach(c => c.checked = true);
+  document.querySelectorAll('.chk-session').forEach(c => c.checked = true);
 });
 document.getElementById('btn-aucun').addEventListener('click', () => {
-  document.querySelectorAll('.chk-atelier').forEach(c => c.checked = false);
+  document.querySelectorAll('.chk-session').forEach(c => c.checked = false);
 });
 
 document.getElementById('btn-generer').addEventListener('click', () => {
-  const idsChoisis = [...document.querySelectorAll('.chk-atelier:checked')].map(c => c.value);
-  if (idsChoisis.length === 0) { afficherAlerte('Sélectionnez au moins un atelier.', 'alerte-warn'); return; }
+  const paires = [...document.querySelectorAll('.chk-session:checked')]
+    .map(c => ({ atelierId: c.dataset.atelier, sessionId: Number(c.dataset.session) }));
+  if (paires.length === 0) { afficherAlerte('Cochez au moins une case.', 'alerte-warn'); return; }
+  genererEtImprimer(paires);
+});
 
+function genererEtImprimer(paires) {
   const zone = document.getElementById('impression-emargement');
   let html = '';
-  idsChoisis.forEach(atelierId => {
+  paires.forEach(({ atelierId, sessionId }) => {
     const atelier = ateliers.find(a => a.id === atelierId);
-    config.sessions.forEach(s => {
-      const groupe = resultat.parSession[s.id].find(g => g.atelierId === atelierId);
-      const participants = groupe ? groupe.participants : [];
-      html += `
-        <div class="feuille-emargement page-imprimable">
-          <h2>${echapper(atelier.titre)}</h2>
-          <p><strong>Animateur(s) :</strong> ${atelier.intervenants.map(echapper).join(', ') || '—'}</p>
-          <p><strong>${echapper(s.label)}</strong> — ${echapper(s.horaire)} — ${echapper(config.date)} — ${echapper(config.lieu)}</p>
-          <table style="width:100%;border-collapse:collapse;">
-            <thead><tr><th style="width:40px;">N°</th><th>Enseignant</th><th>École</th><th class="col-signature">Émargement</th></tr></thead>
-            <tbody>
-              ${participants.length > 0 ? participants.map((p, i) => `
-                <tr><td>${i + 1}</td><td>${echapper(p.nom)}</td><td>${echapper(p.ecoleNom)}</td><td></td></tr>
-              `).join('') : '<tr><td colspan="4">Aucun participant.</td></tr>'}
-            </tbody>
-          </table>
-        </div>
-      `;
-    });
+    const s = config.sessions.find(x => x.id === sessionId);
+    const groupe = resultat.parSession[sessionId].find(g => g.atelierId === atelierId);
+    const participants = groupe ? groupe.participants : [];
+    html += `
+      <div class="feuille-emargement page-imprimable">
+        <h2>${echapper(atelier.titre)}</h2>
+        <p><strong>Animateur(s) :</strong> ${atelier.intervenants.map(echapper).join(', ') || '—'}</p>
+        <p><strong>${echapper(s.label)}</strong> — ${echapper(s.horaire)} — ${echapper(config.date)} — ${echapper(config.lieu)}</p>
+        <table style="width:100%;border-collapse:collapse;">
+          <thead><tr><th style="width:40px;">N°</th><th>Enseignant</th><th>École</th><th class="col-signature">Émargement</th></tr></thead>
+          <tbody>
+            ${participants.length > 0 ? participants.map((p, i) => `
+              <tr><td>${i + 1}</td><td>${echapper(p.nom)}</td><td>${echapper(p.ecoleNom)}</td><td></td></tr>
+            `).join('') : '<tr><td colspan="4">Aucun participant.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    `;
   });
   zone.innerHTML = html;
   window.print();
-});
+}
 
 init();
 </script>
