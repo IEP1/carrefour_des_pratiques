@@ -1,7 +1,7 @@
 /*
- * Accès haut niveau aux données de l'appli : combine le stockage GitHub
- * (js/github-store.js) et les données de démarrage (js/seed-data.js).
- * Chaque école a son propre fichier => pas de conflit entre directeurs
+ * Accès haut niveau aux données de l'appli : combine le stockage Supabase
+ * (js/data-backend.js) et les données de démarrage (js/seed-data.js).
+ * Chaque école a son propre document => pas de conflit entre directeurs
  * qui travaillent sur des écoles différentes au même moment.
  */
 

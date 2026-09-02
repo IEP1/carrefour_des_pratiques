@@ -12,3 +12,10 @@ import.html
 
 # État local de la CLI Netlify (aucun secret dedans, mais propre à chaque machine)
 .netlify/
+
+# Outil de migration à usage unique (GitHub → Supabase), plus utile une fois la migration faite
+migrer-vers-supabase.html
+
+# Mots de passe / secrets notés localement : ne jamais publier
+*.txt
+MDP*
