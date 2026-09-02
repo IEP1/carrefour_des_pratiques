@@ -98,6 +98,17 @@
 
   <div id="impression-rempli" class="doc-imprime"></div>
   <div id="impression-vierge" class="doc-imprime"></div>
+
+  <div id="modale-confirmation" class="no-print" style="display:none;position:fixed;inset:0;background:rgba(14,33,56,.5);z-index:100;align-items:center;justify-content:center;">
+    <div class="carte" style="max-width:420px;width:92%;">
+      <h3 id="confirmation-titre" style="margin-top:0;"></h3>
+      <p id="confirmation-message" class="intro"></p>
+      <div class="groupe-btns" style="justify-content:flex-end;">
+        <button class="btn btn-secondaire" id="btn-confirmation-non">Annuler</button>
+        <button class="btn btn-danger" id="btn-confirmation-oui">Confirmer</button>
+      </div>
+    </div>
+  </div>
 </main>
 
 <p class="pied no-print">IEP1 — Carrefour des pratiques</p>
@@ -164,7 +175,12 @@ function rendreGrille() {
         const rang = ens.choix.indexOf(a.id) + 1;
         return `<td class="cell-choix" onclick="basculerChoix('${ens.id}','${a.id}')">${rang > 0 ? `<span class="pastille-rang">${rang}</span>` : ''}</td>`;
       }).join('')}
-      <td class="no-print"><button class="btn btn-danger btn-sm" onclick="supprimerEnseignant('${ens.id}')">✕</button></td>
+      <td class="no-print">
+        <div class="groupe-btns" style="flex-wrap:nowrap;">
+          <button class="btn btn-secondaire btn-sm" title="Effacer les choix de cet enseignant" onclick="effacerChoixEnseignant('${ens.id}')">🧹</button>
+          <button class="btn btn-danger btn-sm" title="Retirer cet enseignant" onclick="supprimerEnseignant('${ens.id}')">✕</button>
+        </div>
+      </td>
     </tr>
   `).join('');
 }
@@ -219,12 +235,47 @@ function changerCycle(ensId, cycle) {
   marquerModifie();
 }
 
-async function supprimerEnseignant(id) {
+/* Fenêtre de confirmation maison (plus visible qu'une popup native du navigateur). */
+function demanderConfirmation(titre, message, onConfirmer) {
+  const modale = document.getElementById('modale-confirmation');
+  document.getElementById('confirmation-titre').textContent = titre;
+  document.getElementById('confirmation-message').textContent = message;
+  modale.style.display = 'flex';
+  const btnOui = document.getElementById('btn-confirmation-oui');
+  const btnNon = document.getElementById('btn-confirmation-non');
+  const fermer = () => { modale.style.display = 'none'; btnOui.onclick = null; btnNon.onclick = null; };
+  btnOui.onclick = () => { fermer(); onConfirmer(); };
+  btnNon.onclick = fermer;
+}
+
+function supprimerEnseignant(id) {
   const ens = donneesEcole.enseignants.find(e => e.id === id);
-  if (!ens || !confirm(`Retirer ${ens.nom} ?`)) return;
-  donneesEcole.enseignants = donneesEcole.enseignants.filter(e => e.id !== id);
-  rendreGrille();
-  marquerModifie();
+  if (!ens) return;
+  demanderConfirmation(
+    'Retirer un enseignant',
+    `Retirer ${ens.nom} de la liste ? Ses choix éventuels seront perdus. Cette action est immédiate.`,
+    () => {
+      donneesEcole.enseignants = donneesEcole.enseignants.filter(e => e.id !== id);
+      rendreGrille();
+      marquerModifie();
+    }
+  );
+}
+
+function effacerChoixEnseignant(id) {
+  const ens = donneesEcole.enseignants.find(e => e.id === id);
+  if (!ens) return;
+  if (ens.choix.length === 0) return;
+  demanderConfirmation(
+    'Effacer les choix',
+    `Effacer les ${ens.choix.length} choix déjà saisis pour ${ens.nom} ? L'enseignant reste dans la liste, mais devra tout ressaisir.`,
+    () => {
+      ens.choix = [];
+      ens.horodatage = null;
+      rendreGrille();
+      marquerModifie();
+    }
+  );
 }
 
 // Sauvegarde explicite (bouton), pas automatique : plus simple et plus fiable que le
