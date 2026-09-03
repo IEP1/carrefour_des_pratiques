@@ -16,11 +16,12 @@
  * 6. Pour une session donnée, on choisit — parmi les sessions encore
  *    disponibles pour cet atelier et cet enseignant — celle qui compte le
  *    moins de participants, afin d'équilibrer les 3 sessions entre elles.
- * 7. Un enseignant qui n'a fait AUCUN choix (choix vide) n'entre pas dans la
- *    répartition tant que `config.repartirNonInscrits` n'est pas activé.
- *    Une fois activé, ces enseignants sont répartis en tout dernier (repli
- *    uniquement), après TOUS ceux qui ont fait au moins un choix — pour que
- *    ceux qui ont pris la peine de s'inscrire restent toujours prioritaires.
+ * 7. Un enseignant qui n'a coché AUCUN atelier encore valide (choix vide, ou
+ *    ne pointant plus que vers des ateliers "à valider"/supprimés) n'entre
+ *    pas dans la répartition tant que `config.repartirNonInscrits` n'est pas
+ *    activé. Une fois activé, ces enseignants sont répartis en tout dernier
+ *    (repli uniquement), après TOUS ceux qui ont un vrai choix exploitable —
+ *    pour que ceux qui ont pris la peine de s'inscrire restent prioritaires.
  * 8. Les ateliers au statut "à valider" sont entièrement exclus (répartition
  *    et places disponibles) tant qu'ils ne sont pas confirmés.
  * 9. Quota par école : dans un même atelier, une école ne peut occuper plus
@@ -34,12 +35,6 @@
 
 function capaciteAtelier(atelier, config) {
   return atelier.capacite || config.capaciteParDefaut;
-}
-
-/** Un enseignant a "réellement fait des choix" dès qu'il a sélectionné au moins un atelier
- *  (choix complets ou non) — à distinguer de ceux qui n'ont jamais ouvert la grille. */
-function aFaitDesChoix(e) {
-  return Array.isArray(e.choix) && e.choix.length > 0;
 }
 
 const CATEGORIES_SANS_QUOTA_ECOLE = ['DIRECTEUR', 'DESED'];
@@ -58,14 +53,21 @@ function calculerRepartition(ateliers, config, enseignants, options = {}) {
     ? !!options.inclureNonInscrits
     : !!config.repartirNonInscrits;
 
-  const avecChoix = enseignants.filter(aFaitDesChoix);
-  const sansChoix = enseignants.filter(e => !aFaitDesChoix(e));
-  const participants = inclureNonInscrits ? avecChoix.concat(sansChoix) : avecChoix;
-
   // Ateliers "à valider" : hors répartition tant qu'ils ne sont pas confirmés.
   const ateliersValides = ateliers.filter(a => a.statut !== 'a_valider');
   const ateliersParId = {};
   ateliersValides.forEach(a => { ateliersParId[a.id] = a; });
+
+  // Un enseignant "a fait des choix" seulement s'il a coché au moins un atelier ENCORE VALIDE.
+  // Un choix qui ne pointe plus que vers un atelier "à valider" (ou supprimé depuis) ne compte
+  // pas : il resterait invisible sur la page école (aucune pastille affichée) tout en étant
+  // quand même placé "en vrai" ici — c'est exactement ce qui trompait tout le monde avant ce correctif.
+  function aChoixUtile(e) {
+    return Array.isArray(e.choix) && e.choix.some(id => ateliersParId[id]);
+  }
+  const avecChoix = enseignants.filter(aChoixUtile);
+  const sansChoix = enseignants.filter(e => !aChoixUtile(e));
+  const participants = inclureNonInscrits ? avecChoix.concat(sansChoix) : avecChoix;
 
   const sessionIds = config.sessions.map(s => s.id);
 
