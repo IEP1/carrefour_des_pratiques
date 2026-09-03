@@ -11,6 +11,7 @@ const SEED_CONFIG = {
   lieu: 'EEPU Clain - Dumbéa',
   nombreChoix: 5,
   capaciteParDefaut: 20,
+  repartirNonInscrits: false,
   sessions: [
     { id: 1, label: 'Atelier 1', horaire: '8h15 - 9h00' },
     { id: 2, label: 'Atelier 2', horaire: '9h10 - 10h00' },

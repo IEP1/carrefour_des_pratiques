@@ -16,13 +16,32 @@
  * 6. Pour une session donnée, on choisit — parmi les sessions encore
  *    disponibles pour cet atelier et cet enseignant — celle qui compte le
  *    moins de participants, afin d'équilibrer les 3 sessions entre elles.
+ * 7. Un enseignant qui n'a fait AUCUN choix (choix vide) n'entre pas dans la
+ *    répartition tant que `config.repartirNonInscrits` n'est pas activé.
+ *    Une fois activé, ces enseignants sont répartis en tout dernier (repli
+ *    uniquement), après TOUS ceux qui ont fait au moins un choix — pour que
+ *    ceux qui ont pris la peine de s'inscrire restent toujours prioritaires.
  */
 
 function capaciteAtelier(atelier, config) {
   return atelier.capacite || config.capaciteParDefaut;
 }
 
-function calculerRepartition(ateliers, config, enseignants) {
+/** Un enseignant a "réellement fait des choix" dès qu'il a sélectionné au moins un atelier
+ *  (choix complets ou non) — à distinguer de ceux qui n'ont jamais ouvert la grille. */
+function aFaitDesChoix(e) {
+  return Array.isArray(e.choix) && e.choix.length > 0;
+}
+
+function calculerRepartition(ateliers, config, enseignants, options = {}) {
+  const inclureNonInscrits = options.inclureNonInscrits !== undefined
+    ? !!options.inclureNonInscrits
+    : !!config.repartirNonInscrits;
+
+  const avecChoix = enseignants.filter(aFaitDesChoix);
+  const sansChoix = enseignants.filter(e => !aFaitDesChoix(e));
+  const participants = inclureNonInscrits ? avecChoix.concat(sansChoix) : avecChoix;
+
   const sessionIds = config.sessions.map(s => s.id);
 
   // Places restantes par atelier et par session.
@@ -32,9 +51,9 @@ function calculerRepartition(ateliers, config, enseignants) {
     sessionIds.forEach(s => { restant[a.id][s] = capaciteAtelier(a, config); });
   });
 
-  // État de chaque enseignant.
+  // État de chaque enseignant participant à ce calcul.
   const etat = {};
-  enseignants.forEach(e => {
+  participants.forEach(e => {
     etat[e.id] = {
       enseignant: e,
       pointeur: 0,           // index courant dans e.choix
@@ -63,8 +82,9 @@ function calculerRepartition(ateliers, config, enseignants) {
   }
 
   // ---- Passes par rang de choix (avec promotion immédiate en cas de blocage) ----
+  // (seuls les enseignants ayant fait des choix ont quelque chose à traiter ici)
   for (let rang = 0; rang < config.nombreChoix; rang++) {
-    const aTraiterCeTour = enseignants
+    const aTraiterCeTour = avecChoix
       .filter(e => etat[e.id].placements < 3 && etat[e.id].pointeur === rang)
       .sort((a, b) => comparerPriorite(a, b));
 
@@ -86,22 +106,27 @@ function calculerRepartition(ateliers, config, enseignants) {
   }
 
   // ---- Repli : cycle + équilibrage pour les enseignants encore incomplets ----
-  const incomplets = enseignants
-    .filter(e => etat[e.id].placements < 3)
-    .sort((a, b) => comparerPriorite(a, b));
-
-  for (const e of incomplets) {
-    const ensEtat = etat[e.id];
-    let tentatives = 0;
-    while (ensEtat.placements < 3 && tentatives < ateliers.length * 3 + 10) {
-      tentatives++;
-      const option = meilleureOptionRepli(e, ensEtat, ateliers, restant, sessionIds);
-      if (!option) break; // plus aucune place disponible nulle part
-      placer(ensEtat, option.atelierId, option.session);
+  // Stade 1 : ceux qui ont fait des choix, toujours prioritaires. Stade 2 (seulement si
+  // `inclureNonInscrits`) : ceux qui n'ont rien rempli, placés en tout dernier, sur ce qu'il reste.
+  function replier(liste) {
+    for (const e of liste) {
+      const ensEtat = etat[e.id];
+      let tentatives = 0;
+      while (ensEtat.placements < 3 && tentatives < ateliers.length * 3 + 10) {
+        tentatives++;
+        const option = meilleureOptionRepli(e, ensEtat, ateliers, restant, sessionIds);
+        if (!option) break; // plus aucune place disponible nulle part
+        placer(ensEtat, option.atelierId, option.session);
+      }
     }
   }
 
-  return construireResultat(ateliers, config, enseignants, etat, restant);
+  replier(avecChoix.filter(e => etat[e.id].placements < 3).sort((a, b) => comparerPriorite(a, b)));
+  if (inclureNonInscrits) {
+    replier(sansChoix.filter(e => etat[e.id].placements < 3).sort((a, b) => a.nom.localeCompare(b.nom)));
+  }
+
+  return construireResultat(ateliers, config, participants, etat, restant, sansChoix, inclureNonInscrits);
 }
 
 /** Priorité : horodatage le plus ancien d'abord ; sans horodatage = en dernier. */
@@ -148,7 +173,7 @@ function meilleureOptionRepli(enseignant, ensEtat, ateliers, restant, sessionIds
   return candidats[0];
 }
 
-function construireResultat(ateliers, config, enseignants, etat, restant) {
+function construireResultat(ateliers, config, enseignants, etat, restant, sansChoix = [], nonInscritsInclus = false) {
   const parSession = {};
   config.sessions.forEach(s => {
     parSession[s.id] = ateliers.map(a => ({
@@ -186,10 +211,15 @@ function construireResultat(ateliers, config, enseignants, etat, restant) {
     genereLe: new Date().toISOString(),
     parSession,
     parEnseignant,
+    // Enseignants n'ayant fait aucun choix : toujours listés pour info, qu'ils aient été
+    // intégrés à la répartition ci-dessus ou non (voir stats.nonInscritsInclus).
+    nonInscrits: sansChoix.map(e => ({ id: e.id, nom: e.nom, ecoleNom: e.ecoleNom })),
     stats: {
       totalEnseignants: enseignants.length,
       complets: parEnseignant.filter(e => e.complet).length,
-      incomplets: parEnseignant.filter(e => !e.complet).length
+      incomplets: parEnseignant.filter(e => !e.complet).length,
+      sansChoix: sansChoix.length,
+      nonInscritsInclus
     }
   };
 }

@@ -18,6 +18,7 @@
     </div>
     <div class="groupe-btns">
       <button class="btn btn-primaire" id="btn-calculer">▶ Calculer la répartition</button>
+      <button class="btn btn-secondaire" id="btn-non-inscrits"></button>
     </div>
   </div>
 
@@ -47,8 +48,20 @@ async function init() {
     afficherAlerte("Erreur de chargement (" + e.message + ").", 'alerte-err');
     ateliers = SEED_ATELIERS; config = SEED_CONFIG;
   }
+  majBoutonNonInscrits();
   if (resultat) rendreResultats();
   else afficherAlerte("Aucune répartition calculée pour l'instant. Cliquez sur « Calculer la répartition ».", 'alerte-info');
+}
+
+function majBoutonNonInscrits() {
+  const btn = document.getElementById('btn-non-inscrits');
+  if (config.repartirNonInscrits) {
+    btn.textContent = '↩ Revenir aux seuls inscrits';
+    btn.title = "N'inclure à nouveau que les enseignants ayant fait des choix.";
+  } else {
+    btn.textContent = '📋 Répartir aussi les non-inscrits';
+    btn.title = "Une fois la date limite passée : place les enseignants n'ayant fait aucun choix sur les places restantes, après tous les autres.";
+  }
 }
 
 function afficherAlerte(msg, classe) {
@@ -73,6 +86,30 @@ document.getElementById('btn-calculer').addEventListener('click', async () => {
   }
 });
 
+document.getElementById('btn-non-inscrits').addEventListener('click', async () => {
+  const activer = !config.repartirNonInscrits;
+  const message = activer
+    ? "Répartir aussi les enseignants n'ayant fait aucun choix ?\nIls seront placés en tout dernier, sur les places restantes, après tous les enseignants inscrits (qui restent prioritaires). À utiliser une fois la date limite passée."
+    : "Revenir à une répartition ne concernant que les enseignants ayant fait des choix ?\nLes enseignants sans choix seront retirés de la répartition (ils redeviennent visibles mais non placés).";
+  if (!confirm(message)) return;
+
+  config.repartirNonInscrits = activer;
+  afficherAlerte('Mise à jour en cours…', 'alerte-info');
+  try {
+    await Store.sauvegarderConfig(config);
+    resultat = await Store.recalculerRepartition();
+    majBoutonNonInscrits();
+    if (!resultat) {
+      afficherAlerte("Aucun enseignant saisi dans aucune école pour le moment.", 'alerte-warn');
+      return;
+    }
+    afficherAlerte(activer ? 'Enseignants non-inscrits intégrés à la répartition.' : 'Répartition recalculée sans les enseignants non-inscrits.', 'alerte-ok');
+    rendreResultats();
+  } catch (e) {
+    afficherAlerte('Échec de la mise à jour : ' + e.message, 'alerte-err');
+  }
+});
+
 function rendreResultats() {
   const resume = document.getElementById('resume');
   resume.style.display = 'block';
@@ -82,6 +119,10 @@ function rendreResultats() {
     <strong>${resultat.stats.complets}</strong> enseignant(s) complet(s) sur leurs 3 ateliers,
     <strong>${resultat.stats.incomplets}</strong> incomplet(s) sur un total de ${resultat.stats.totalEnseignants}.</p>
     ${resultat.stats.incomplets > 0 ? `<p class="alerte alerte-warn">Voir la liste des enseignants incomplets en bas de page.</p>` : ''}
+    ${resultat.stats.sansChoix > 0 ? `<p class="alerte ${resultat.stats.nonInscritsInclus ? 'alerte-ok' : 'alerte-info'}">
+      <strong>${resultat.stats.sansChoix}</strong> enseignant(s) n'ont fait aucun choix —
+      ${resultat.stats.nonInscritsInclus ? 'ils sont inclus ci-dessus, placés en dernier.' : "ils ne sont <strong>pas</strong> inclus dans la répartition ci-dessus. Voir la liste en bas de page."}
+    </p>` : ''}
   `;
 
   const zone = document.getElementById('resultats');
@@ -121,6 +162,27 @@ function rendreResultats() {
                   <td>${Object.values(e.sessions).filter(Boolean).length} / 3</td>
                 </tr>
               `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  if (resultat.nonInscrits && resultat.nonInscrits.length > 0) {
+    zone.innerHTML += `
+      <div class="carte">
+        <h3>📋 Enseignants n'ayant fait aucun choix (${resultat.nonInscrits.length})</h3>
+        <p style="margin-top:0;color:var(--texte-muted);">
+          ${resultat.stats.nonInscritsInclus
+            ? 'Ils ont été placés en dernier, après tous les autres, sur les places encore disponibles.'
+            : "Ils ne sont pas placés pour l'instant. Utilisez « 📋 Répartir aussi les non-inscrits » une fois la date limite passée."}
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Enseignant</th><th>École</th></tr></thead>
+            <tbody>
+              ${resultat.nonInscrits.map(e => `<tr><td>${echapper(e.nom)}</td><td>${echapper(e.ecoleNom)}</td></tr>`).join('')}
             </tbody>
           </table>
         </div>

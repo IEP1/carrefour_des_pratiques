@@ -61,8 +61,10 @@ const Store = {
   /** Recalcule la répartition à partir de l'état actuel de toutes les écoles et l'enregistre.
    *  Nécessite js/algo.js (calculerRepartition). Sûr à appeler automatiquement à chaque
    *  enregistrement d'école : l'horodatage garantit qu'un enseignant déjà placé ne peut jamais
-   *  être "déplacé" par quelqu'un qui remplit plus tard (voir js/algo.js). */
-  async recalculerRepartition() {
+   *  être "déplacé" par quelqu'un qui remplit plus tard (voir js/algo.js).
+   *  Par défaut, respecte le réglage `config.repartirNonInscrits` (persistant) — on peut le
+   *  forcer ponctuellement via options.inclureNonInscrits (true/false). */
+  async recalculerRepartition(options = {}) {
     const [ateliers, config, ecolesAvecDonnees] = await Promise.all([
       this.chargerAteliers(), this.chargerConfig(), this.chargerToutesLesEcolesAvecDonnees()
     ]);
@@ -71,7 +73,7 @@ const Store = {
       (ec.donnees.enseignants || []).forEach(ens => enseignants.push({ ...ens, ecoleNom: ec.nom }));
     });
     if (enseignants.length === 0) return null;
-    const resultat = calculerRepartition(ateliers, config, enseignants);
+    const resultat = calculerRepartition(ateliers, config, enseignants, options);
     await this.sauvegarderRepartition(resultat);
     return resultat;
   }
