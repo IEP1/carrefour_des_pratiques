@@ -9,8 +9,8 @@
 <style>
   .col-session { text-align: center; white-space: nowrap; }
   .col-session small { display: block; color: var(--texte-muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
-  .col-session .nb-part { display: block; font-size: 0.75rem; color: var(--texte-muted); margin-top: 2px; }
-  .col-session input { width: auto; }
+  .col-session .nb-part { display: block; font-size: 0.95rem; margin-top: 2px; }
+  .col-imprimer { text-align: center; white-space: nowrap; }
   #impression-emargement { display: none; }
   @media print {
     @page { margin: 12mm; }
@@ -30,34 +30,25 @@
 <main>
   <div class="no-print">
     <h2>Feuilles d'émargation</h2>
-    <p class="intro">Cochez, pour chaque atelier et chaque créneau, les feuilles à imprimer (nom de l'atelier, animateur, liste des enseignants attendus) — ou utilisez l'impression rapide par créneau ci-dessous.</p>
+    <p class="intro">Impression rapide par créneau ci-dessous, ou imprimez un atelier précis (ses 3 créneaux d'un coup) depuis le tableau.</p>
   </div>
 
   <div id="alerte-zone"></div>
 
   <div class="carte no-print">
-    <div class="barre-actions" style="margin-bottom:6px;">
-      <h3 style="margin:0;">Ateliers et créneaux à imprimer</h3>
-      <div class="groupe-btns">
-        <button class="btn btn-secondaire btn-sm" id="btn-tout">Tout cocher</button>
-        <button class="btn btn-secondaire btn-sm" id="btn-aucun">Tout décocher</button>
-      </div>
-    </div>
+    <h3 style="margin-top:0;">Impression rapide</h3>
+    <p class="intro" style="margin-bottom:10px;">Génère directement les feuilles de tous les ateliers ayant des participants, pour le(s) créneau(x) choisi(s).</p>
+    <div class="groupe-btns" id="boutons-rapides"></div>
+  </div>
+
+  <div class="carte no-print">
+    <h3 style="margin-top:0;">Imprimer un atelier précis</h3>
     <div class="table-wrap">
       <table id="tableau-ateliers">
         <thead><tr id="entete-tableau"><th>Atelier</th><th>Intervenant(s)</th></tr></thead>
         <tbody id="corps-tableau"><tr><td colspan="5">Chargement…</td></tr></tbody>
       </table>
     </div>
-    <div class="groupe-btns" style="margin-top:14px;">
-      <button class="btn btn-primaire" id="btn-generer">🖨 Imprimer la sélection cochée</button>
-    </div>
-  </div>
-
-  <div class="carte no-print">
-    <h3 style="margin-top:0;">Impression rapide par créneau</h3>
-    <p class="intro" style="margin-bottom:10px;">Génère directement les feuilles de tous les ateliers ayant des participants, pour le(s) créneau(x) choisi(s).</p>
-    <div class="groupe-btns" id="boutons-rapides"></div>
   </div>
 
   <div id="impression-emargement"></div>
@@ -83,10 +74,11 @@ async function init() {
     afficherAlerte("Erreur de chargement (" + e.message + ").", 'alerte-err');
     ateliers = SEED_ATELIERS; config = SEED_CONFIG;
   }
+  // Les ateliers "à valider" ne participent pas à la répartition : rien à émarger pour eux.
+  ateliers = ateliers.filter(a => a.statut !== 'a_valider');
   if (!resultat) {
     afficherAlerte('Aucune répartition n\'a encore été calculée. Rendez-vous sur la page « Répartition » d\'abord.', 'alerte-warn');
     document.getElementById('corps-tableau').innerHTML = '';
-    document.getElementById('btn-generer').disabled = true;
     return;
   }
   rendreTableau();
@@ -108,28 +100,32 @@ function nbParticipants(atelierId, sessionId) {
 function rendreTableau() {
   document.getElementById('entete-tableau').innerHTML =
     '<th>Atelier</th><th>Intervenant(s)</th>' +
-    config.sessions.map((s, i) => `<th class="col-session">Créneau ${i + 1}<small>${echapper(s.horaire)}</small></th>`).join('');
+    config.sessions.map((s, i) => `<th class="col-session">Créneau ${i + 1}<small>${echapper(s.horaire)}</small></th>`).join('') +
+    '<th class="col-imprimer">Imprimer</th>';
 
   document.getElementById('corps-tableau').innerHTML = ateliers.map(a => `
     <tr>
       <td><strong>${echapper(a.titre)}</strong></td>
       <td>${a.intervenants.map(echapper).join(', ') || '—'}</td>
-      ${config.sessions.map(s => {
-        const n = nbParticipants(a.id, s.id);
-        return `<td class="col-session">
-          <input type="checkbox" class="chk-session" data-atelier="${a.id}" data-session="${s.id}" ${n > 0 ? 'checked' : ''}>
-          <span class="nb-part">(${n})</span>
-        </td>`;
-      }).join('')}
+      ${config.sessions.map(s => `<td class="col-session"><span class="nb-part">${nbParticipants(a.id, s.id)}</span></td>`).join('')}
+      <td class="col-imprimer"><button class="btn btn-secondaire btn-sm btn-imprimer-atelier" data-atelier="${a.id}">🖨 Imprimer</button></td>
     </tr>
   `).join('');
+
+  document.querySelectorAll('.btn-imprimer-atelier').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const atelierId = btn.dataset.atelier;
+      const paires = config.sessions.map(s => ({ atelierId, sessionId: s.id }));
+      genererEtImprimer(paires);
+    });
+  });
 }
 
 function rendreBoutonsRapides() {
   const zone = document.getElementById('boutons-rapides');
   zone.innerHTML =
     config.sessions.map((s, i) => `<button class="btn btn-secondaire btn-imprimer-rapide" data-session="${s.id}">🖨 Créneau ${i + 1} uniquement <span style="opacity:.7;">(${echapper(s.horaire)})</span></button>`).join('') +
-    `<button class="btn btn-navy" id="btn-imprimer-tout">🖨 Tous les émargements</button>`;
+    `<button class="btn btn-navy" id="btn-imprimer-tout">🖨 Tous les ateliers et créneaux</button>`;
 
   zone.querySelectorAll('.btn-imprimer-rapide').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -148,20 +144,6 @@ function rendreBoutonsRapides() {
     genererEtImprimer(paires);
   });
 }
-
-document.getElementById('btn-tout').addEventListener('click', () => {
-  document.querySelectorAll('.chk-session').forEach(c => c.checked = true);
-});
-document.getElementById('btn-aucun').addEventListener('click', () => {
-  document.querySelectorAll('.chk-session').forEach(c => c.checked = false);
-});
-
-document.getElementById('btn-generer').addEventListener('click', () => {
-  const paires = [...document.querySelectorAll('.chk-session:checked')]
-    .map(c => ({ atelierId: c.dataset.atelier, sessionId: Number(c.dataset.session) }));
-  if (paires.length === 0) { afficherAlerte('Cochez au moins une case.', 'alerte-warn'); return; }
-  genererEtImprimer(paires);
-});
 
 function genererEtImprimer(paires) {
   const zone = document.getElementById('impression-emargement');

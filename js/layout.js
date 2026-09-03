@@ -14,12 +14,15 @@ function injecterEntete(pageActive) {
   const liens = PAGES_NAV.map(p => `<a href="${p.href}" class="${p.href === pageActive ? 'actif' : ''}">${p.label}</a>`).join('');
   cible.innerHTML = `
     <header class="entete no-print">
-      <img src="assets/logo-iep1.png" alt="Logo IEP1">
-      <div class="titres">
-        <h1>Carrefour des pratiques</h1>
-        <p class="sous-titre">IEP1 — Avec les équipes, pour les élèves</p>
+      <div class="entete-marque">
+        <img src="assets/logo-iep1.png" alt="Logo IEP1">
+        <div class="titres">
+          <h1>Carrefour des pratiques</h1>
+          <p class="sous-titre">IEP1 — Avec les équipes, pour les élèves</p>
+        </div>
       </div>
       <nav>${liens}</nav>
+      <div class="entete-spacer" aria-hidden="true"></div>
     </header>
   `;
   // Si la page courante a une sauvegarde en attente (voir ecole.html), on l'attend avant de

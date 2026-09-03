@@ -21,6 +21,15 @@
  *    Une fois activé, ces enseignants sont répartis en tout dernier (repli
  *    uniquement), après TOUS ceux qui ont fait au moins un choix — pour que
  *    ceux qui ont pris la peine de s'inscrire restent toujours prioritaires.
+ * 8. Les ateliers au statut "à valider" sont entièrement exclus (répartition
+ *    et places disponibles) tant qu'ils ne sont pas confirmés.
+ * 9. Quota par école : dans un même atelier, une école ne peut occuper plus
+ *    d'une fraction des places (1/2 ou 1/3 selon la taille de l'atelier, voir
+ *    quotaEcoleAtelier) — pour éviter qu'une grosse école "monopolise" un
+ *    atelier populaire. Directeurs et référents DESED n'y sont pas soumis.
+ *    Ce quota n'est qu'une préférence d'équilibrage, pas une vraie place
+ *    perdue : si des sièges restent vides faute de candidats hors-quota (un
+ *    atelier peu demandé), une dernière passe le lève pour ne rien gâcher.
  */
 
 function capaciteAtelier(atelier, config) {
@@ -33,6 +42,17 @@ function aFaitDesChoix(e) {
   return Array.isArray(e.choix) && e.choix.length > 0;
 }
 
+const CATEGORIES_SANS_QUOTA_ECOLE = ['DIRECTEUR', 'DESED'];
+
+/** Nombre max d'enseignants d'UNE MÊME école admis dans un atelier, tous créneaux confondus.
+ *  1/2 pour les petits ateliers (un tiers y serait trop sévère), 1/3 pour les plus grands,
+ *  où laisser une école prendre la moitié des places serait vraiment excessif. */
+function quotaEcoleAtelier(atelier, config) {
+  const capaciteTotale = capaciteAtelier(atelier, config) * config.sessions.length;
+  const ratio = capaciteTotale <= 30 ? 0.5 : (1 / 3);
+  return Math.max(1, Math.floor(capaciteTotale * ratio));
+}
+
 function calculerRepartition(ateliers, config, enseignants, options = {}) {
   const inclureNonInscrits = options.inclureNonInscrits !== undefined
     ? !!options.inclureNonInscrits
@@ -42,14 +62,38 @@ function calculerRepartition(ateliers, config, enseignants, options = {}) {
   const sansChoix = enseignants.filter(e => !aFaitDesChoix(e));
   const participants = inclureNonInscrits ? avecChoix.concat(sansChoix) : avecChoix;
 
+  // Ateliers "à valider" : hors répartition tant qu'ils ne sont pas confirmés.
+  const ateliersValides = ateliers.filter(a => a.statut !== 'a_valider');
+  const ateliersParId = {};
+  ateliersValides.forEach(a => { ateliersParId[a.id] = a; });
+
   const sessionIds = config.sessions.map(s => s.id);
 
   // Places restantes par atelier et par session.
   const restant = {};
-  ateliers.forEach(a => {
+  ateliersValides.forEach(a => {
     restant[a.id] = {};
     sessionIds.forEach(s => { restant[a.id][s] = capaciteAtelier(a, config); });
   });
+
+  // Quota par école, par atelier (voir règle 9 ci-dessus).
+  const quotaParAtelier = {};
+  ateliersValides.forEach(a => { quotaParAtelier[a.id] = quotaEcoleAtelier(a, config); });
+  const comptageEcoleAtelier = {}; // atelierId -> { ecoleNom -> nombre déjà placé }
+
+  function estExemptQuotaEcole(enseignant) {
+    return CATEGORIES_SANS_QUOTA_ECOLE.includes(enseignant.cycle);
+  }
+  function quotaEcoleAtteint(atelierId, enseignant, ignorerQuota) {
+    if (ignorerQuota || estExemptQuotaEcole(enseignant)) return false;
+    const compte = (comptageEcoleAtelier[atelierId] && comptageEcoleAtelier[atelierId][enseignant.ecoleNom]) || 0;
+    return compte >= quotaParAtelier[atelierId];
+  }
+  function incrementerQuotaEcole(atelierId, enseignant) {
+    if (estExemptQuotaEcole(enseignant)) return;
+    if (!comptageEcoleAtelier[atelierId]) comptageEcoleAtelier[atelierId] = {};
+    comptageEcoleAtelier[atelierId][enseignant.ecoleNom] = (comptageEcoleAtelier[atelierId][enseignant.ecoleNom] || 0) + 1;
+  }
 
   // État de chaque enseignant participant à ce calcul.
   const etat = {};
@@ -93,13 +137,15 @@ function calculerRepartition(ateliers, config, enseignants, options = {}) {
       while (ensEtat.placements < 3 && ensEtat.pointeur < e.choix.length) {
         const atelierId = e.choix[ensEtat.pointeur];
         if (ensEtat.atelierIds.has(atelierId)) { ensEtat.pointeur++; continue; }
+        if (!ateliersParId[atelierId]) { ensEtat.pointeur++; continue; } // atelier "à valider" : ignoré, comme s'il était complet
         const dispo = sessionsEligibles(ensEtat, atelierId);
-        if (dispo.length > 0) {
+        if (dispo.length > 0 && !quotaEcoleAtteint(atelierId, e, false)) {
           placer(ensEtat, atelierId, meilleureSession(atelierId, dispo));
+          incrementerQuotaEcole(atelierId, e);
           ensEtat.pointeur++;
           break; // un placement par enseignant par tour ; il repassera au tour suivant si besoin
         } else {
-          ensEtat.pointeur++; // choix bloqué -> promotion immédiate du choix suivant, même tour
+          ensEtat.pointeur++; // choix bloqué (place ou quota école) -> promotion immédiate, même tour
         }
       }
     }
@@ -108,25 +154,33 @@ function calculerRepartition(ateliers, config, enseignants, options = {}) {
   // ---- Repli : cycle + équilibrage pour les enseignants encore incomplets ----
   // Stade 1 : ceux qui ont fait des choix, toujours prioritaires. Stade 2 (seulement si
   // `inclureNonInscrits`) : ceux qui n'ont rien rempli, placés en tout dernier, sur ce qu'il reste.
-  function replier(liste) {
+  // Stade 3 : le quota école est levé pour ne pas laisser un siège vide faute de candidat éligible
+  // (signe que l'atelier était peu demandé) — toujours dans le même ordre de priorité.
+  function replier(liste, ignorerQuota) {
     for (const e of liste) {
       const ensEtat = etat[e.id];
       let tentatives = 0;
-      while (ensEtat.placements < 3 && tentatives < ateliers.length * 3 + 10) {
+      while (ensEtat.placements < 3 && tentatives < ateliersValides.length * 3 + 10) {
         tentatives++;
-        const option = meilleureOptionRepli(e, ensEtat, ateliers, restant, sessionIds);
+        const option = meilleureOptionRepli(e, ensEtat, ateliersValides, restant, sessionIds, quotaEcoleAtteint, ignorerQuota);
         if (!option) break; // plus aucune place disponible nulle part
         placer(ensEtat, option.atelierId, option.session);
+        incrementerQuotaEcole(option.atelierId, e);
       }
     }
   }
 
-  replier(avecChoix.filter(e => etat[e.id].placements < 3).sort((a, b) => comparerPriorite(a, b)));
-  if (inclureNonInscrits) {
-    replier(sansChoix.filter(e => etat[e.id].placements < 3).sort((a, b) => a.nom.localeCompare(b.nom)));
-  }
+  const parPrioriteAvecChoix = () => avecChoix.filter(e => etat[e.id].placements < 3).sort((a, b) => comparerPriorite(a, b));
+  const parPrioriteSansChoix = () => sansChoix.filter(e => etat[e.id].placements < 3).sort((a, b) => a.nom.localeCompare(b.nom));
 
-  return construireResultat(ateliers, config, participants, etat, restant, sansChoix, inclureNonInscrits);
+  replier(parPrioriteAvecChoix(), false);
+  if (inclureNonInscrits) replier(parPrioriteSansChoix(), false);
+
+  // Passe finale : quota école levé, uniquement pour ceux encore incomplets à ce stade.
+  replier(parPrioriteAvecChoix(), true);
+  if (inclureNonInscrits) replier(parPrioriteSansChoix(), true);
+
+  return construireResultat(ateliersValides, config, participants, etat, restant, sansChoix, inclureNonInscrits);
 }
 
 /** Priorité : horodatage le plus ancien d'abord ; sans horodatage = en dernier. */
@@ -140,8 +194,9 @@ function comparerPriorite(a, b) {
 const CYCLES_RESTREINTS = ['C1', 'C2', 'C3'];
 
 /** Cherche la meilleure place de repli : priorité au cycle de l'enseignant, puis à l'atelier le moins rempli globalement.
- *  Un enseignant Directeur ou référent DESED n'a pas de cycle propre : il est éligible à tous les ateliers. */
-function meilleureOptionRepli(enseignant, ensEtat, ateliers, restant, sessionIds) {
+ *  Un enseignant Directeur ou référent DESED n'a pas de cycle propre : il est éligible à tous les ateliers.
+ *  `quotaEcoleAtteint` et `ignorerQuota` appliquent le quota par école (voir règle 9 en tête de fichier). */
+function meilleureOptionRepli(enseignant, ensEtat, ateliers, restant, sessionIds, quotaEcoleAtteint, ignorerQuota) {
   const candidats = [];
   const sansRestrictionDeCycle = !CYCLES_RESTREINTS.includes(enseignant.cycle);
   const ateliersDuCycle = sansRestrictionDeCycle ? ateliers : ateliers.filter(a => a.cycles.includes(enseignant.cycle));
@@ -149,6 +204,7 @@ function meilleureOptionRepli(enseignant, ensEtat, ateliers, restant, sessionIds
 
   for (const a of pool) {
     if (ensEtat.atelierIds.has(a.id)) continue;
+    if (quotaEcoleAtteint(a.id, enseignant, ignorerQuota)) continue;
     for (const s of sessionIds) {
       if (ensEtat.sessions[s]) continue;
       if (restant[a.id][s] <= 0) continue;
@@ -159,6 +215,7 @@ function meilleureOptionRepli(enseignant, ensEtat, ateliers, restant, sessionIds
     // Aucune place dans le cycle : on relâche la contrainte de cycle.
     for (const a of ateliers) {
       if (ensEtat.atelierIds.has(a.id)) continue;
+      if (quotaEcoleAtteint(a.id, enseignant, ignorerQuota)) continue;
       for (const s of sessionIds) {
         if (ensEtat.sessions[s]) continue;
         if (restant[a.id][s] <= 0) continue;

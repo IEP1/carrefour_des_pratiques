@@ -133,10 +133,12 @@ async function init() {
       Store.chargerEcoles(), Store.chargerAteliers(), Store.chargerConfig(), Store.chargerEcole(ecoleId)
     ]);
     ecole = ecoles.find(e => e.id === ecoleId) || { id: ecoleId, nom: ecoleId };
-    ateliers = at; config = cfg; donneesEcole = de || { enseignants: [] };
+    // Les ateliers "à valider" ne sont pas encore confirmés : on ne les propose pas au choix.
+    ateliers = at.filter(a => a.statut !== 'a_valider');
+    config = cfg; donneesEcole = de || { enseignants: [] };
   } catch (e) {
     afficherAlerte("Erreur de chargement (" + e.message + ").", 'alerte-err');
-    ecole = { nom: ecoleId }; ateliers = SEED_ATELIERS; config = SEED_CONFIG;
+    ecole = { nom: ecoleId }; ateliers = SEED_ATELIERS.filter(a => a.statut !== 'a_valider'); config = SEED_CONFIG;
   }
   document.getElementById('titre-ecole').textContent = ecole.nom;
   document.getElementById('nb-choix-txt').textContent = config.nombreChoix;
