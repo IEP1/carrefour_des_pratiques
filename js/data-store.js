@@ -56,6 +56,24 @@ const Store = {
   },
   async sauvegarderRepartition(rep) {
     await sauvegarderJSON('repartition.json', rep, 'Nouvelle répartition calculée');
+  },
+
+  /** Recalcule la répartition à partir de l'état actuel de toutes les écoles et l'enregistre.
+   *  Nécessite js/algo.js (calculerRepartition). Sûr à appeler automatiquement à chaque
+   *  enregistrement d'école : l'horodatage garantit qu'un enseignant déjà placé ne peut jamais
+   *  être "déplacé" par quelqu'un qui remplit plus tard (voir js/algo.js). */
+  async recalculerRepartition() {
+    const [ateliers, config, ecolesAvecDonnees] = await Promise.all([
+      this.chargerAteliers(), this.chargerConfig(), this.chargerToutesLesEcolesAvecDonnees()
+    ]);
+    const enseignants = [];
+    ecolesAvecDonnees.forEach(ec => {
+      (ec.donnees.enseignants || []).forEach(ens => enseignants.push({ ...ens, ecoleNom: ec.nom }));
+    });
+    if (enseignants.length === 0) return null;
+    const resultat = calculerRepartition(ateliers, config, enseignants);
+    await this.sauvegarderRepartition(resultat);
+    return resultat;
   }
 };
 

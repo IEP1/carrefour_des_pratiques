@@ -116,6 +116,7 @@
 <script src="js/data-backend.js"></script>
 <script src="js/seed-data.js"></script>
 <script src="js/data-store.js"></script>
+<script src="js/algo.js"></script>
 <script src="js/layout.js"></script>
 <script>
 injecterEntete('ecoles.html');
@@ -301,6 +302,11 @@ async function sauvegarderMaintenant() {
     await Store.sauvegarderEcole(ecoleId, donneesEcole, ecole.nom);
     afficherAlerte('Enregistré ✓', 'alerte-ok');
     document.getElementById('btn-enregistrer-flottant').style.display = 'none';
+    // Répartition en direct : on ne bloque pas la sauvegarde ni la navigation là-dessus
+    // (voir js/data-store.js — sûr à relancer automatiquement, même si ça échoue une fois).
+    Store.recalculerRepartition()
+      .then(() => afficherAlerte('Enregistré ✓ (répartition mise à jour)', 'alerte-ok'))
+      .catch(err => console.error('Recalcul répartition après sauvegarde :', err));
   } catch (e) {
     modifsNonEnregistrees = true; // l'échec remet le drapeau : rien n'est perdu, il faudra réessayer
     afficherAlerte("Échec de l'enregistrement : " + e.message, 'alerte-err');

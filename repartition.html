@@ -61,19 +61,11 @@ function echapper(s) {
 document.getElementById('btn-calculer').addEventListener('click', async () => {
   afficherAlerte('Chargement des écoles et calcul en cours…', 'alerte-info');
   try {
-    const ecolesAvecDonnees = await Store.chargerToutesLesEcolesAvecDonnees();
-    const enseignants = [];
-    ecolesAvecDonnees.forEach(ec => {
-      (ec.donnees.enseignants || []).forEach(ens => {
-        enseignants.push({ ...ens, ecoleNom: ec.nom });
-      });
-    });
-    if (enseignants.length === 0) {
+    resultat = await Store.recalculerRepartition();
+    if (!resultat) {
       afficherAlerte("Aucun enseignant saisi dans aucune école pour le moment.", 'alerte-warn');
       return;
     }
-    resultat = calculerRepartition(ateliers, config, enseignants);
-    await Store.sauvegarderRepartition(resultat);
     afficherAlerte(`Répartition calculée et enregistrée : ${resultat.stats.complets}/${resultat.stats.totalEnseignants} enseignants placés sur leurs 3 ateliers.`, resultat.stats.incomplets > 0 ? 'alerte-warn' : 'alerte-ok');
     rendreResultats();
   } catch (e) {
