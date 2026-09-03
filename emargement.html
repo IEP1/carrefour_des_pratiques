@@ -13,11 +13,12 @@
   .col-session input { width: auto; }
   #impression-emargement { display: none; }
   @media print {
+    @page { margin: 12mm; }
     #impression-emargement { display: block !important; }
     .no-print { display: none !important; }
     .feuille-emargement { padding: 10px 0; }
     .feuille-emargement h2 { margin-bottom: 2px; }
-    .feuille-emargement table { margin-top: 14px; }
+    .feuille-emargement table { width: 100%; border-collapse: collapse; border: 1px solid #999; margin-top: 14px; }
     .feuille-emargement th, .feuille-emargement td { border: 1px solid #999; padding: 8px; }
     .feuille-emargement .col-signature { width: 30%; }
   }

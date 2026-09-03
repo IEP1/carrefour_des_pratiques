@@ -142,8 +142,9 @@ function meilleureOptionRepli(enseignant, ensEtat, ateliers, restant, sessionIds
     }
   }
   if (candidats.length === 0) return null;
-  // On choisit la place la plus remplie (le moins de "restant") pour équilibrer les groupes.
-  candidats.sort((x, y) => x.restant - y.restant);
+  // On choisit la place la MOINS remplie (le plus de "restant"), comme pour les choix classés :
+  // équilibrer signifie répartir entre les 3 créneaux, pas empiler tout le monde sur le même.
+  candidats.sort((x, y) => y.restant - x.restant);
   return candidats[0];
 }
 
@@ -173,6 +174,12 @@ function construireResultat(ateliers, config, enseignants, etat, restant) {
       sessions: { ...ensEtat.sessions },
       complet: ensEtat.placements === 3
     };
+  });
+
+  // Ordre alphabétique par nom dans chaque groupe (plus pratique pour retrouver quelqu'un
+  // sur une feuille d'émargement que l'ordre de traitement, qui regroupait par école).
+  Object.values(parSession).forEach(groupes => {
+    groupes.forEach(g => g.participants.sort((a, b) => a.nom.localeCompare(b.nom)));
   });
 
   return {
