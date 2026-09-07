@@ -49,8 +49,29 @@ async function init() {
     ateliers = SEED_ATELIERS; config = SEED_CONFIG;
   }
   majBoutonNonInscrits();
+  // Affichage immédiat du dernier résultat enregistré (pour ne pas laisser la page vide le temps
+  // du recalcul), remplacé juste après par un calcul frais — voir plus bas.
   if (resultat) rendreResultats();
-  else afficherAlerte("Aucune répartition calculée pour l'instant. Cliquez sur « Calculer la répartition ».", 'alerte-info');
+
+  // On ne se fie jamais au seul résultat déjà enregistré : on relance systématiquement le calcul
+  // dès l'ouverture de la page (les choix des écoles ou les règles ont pu changer depuis), sans
+  // qu'il soit besoin de cliquer soi-même sur « Calculer la répartition ».
+  try {
+    const frais = await Store.recalculerRepartition();
+    resultat = frais;
+    if (frais) {
+      document.getElementById('alerte-zone').innerHTML = '';
+      rendreResultats();
+    } else {
+      document.getElementById('resume').style.display = 'none';
+      document.getElementById('resultats').innerHTML = '';
+      afficherAlerte("Aucun enseignant saisi dans aucune école pour le moment.", 'alerte-warn');
+    }
+  } catch (e) {
+    afficherAlerte(resultat
+      ? "Le recalcul automatique a échoué (" + e.message + "). Le résultat affiché ci-dessous peut être obsolète."
+      : "Erreur de calcul (" + e.message + ").", 'alerte-err');
+  }
 }
 
 function majBoutonNonInscrits() {
