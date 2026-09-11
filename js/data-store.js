@@ -72,12 +72,29 @@ const Store = {
     ecolesAvecDonnees.forEach(ec => {
       (ec.donnees.enseignants || []).forEach(ens => enseignants.push({ ...ens, ecoleNom: ec.nom }));
     });
-    if (enseignants.length === 0) return null;
-    const resultat = calculerRepartition(ateliers, config, enseignants, options);
+    // Un enseignant qui anime un atelier ne peut pas être aussi participant : il est occupé sur
+    // les 3 créneaux à animer le sien. Exclu du roulement, quel que soit son statut de choix.
+    const participants = enseignants.filter(e => !estFormateur(e, ateliers));
+    if (participants.length === 0) return null;
+    const resultat = calculerRepartition(ateliers, config, participants, options);
+    resultat.stats.formateurs = enseignants.length - participants.length;
     await this.sauvegarderRepartition(resultat);
     return resultat;
   }
 };
+
+/** Normalise un nom pour une comparaison robuste (accents, casse, espaces superflus). */
+function normaliserNom(nom) {
+  return (nom || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
+}
+
+/** Vrai si cet enseignant anime un atelier (n'importe lequel, validé ou non) : il ne peut alors
+ *  ni faire de choix, ni être placé dans le roulement — il anime le sien sur les 3 créneaux.
+ *  Détection par nom (les intervenants d'un atelier sont juste des noms en texte libre). */
+function estFormateur(enseignant, ateliers) {
+  const nomNorm = normaliserNom(enseignant.nom);
+  return (ateliers || []).some(a => (a.intervenants || []).some(i => normaliserNom(i) === nomNorm));
+}
 
 function genererIdAtelier(existants) {
   let n = existants.length + 1;

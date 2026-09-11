@@ -91,18 +91,20 @@ injecterEntete('ecoles.html');
 
 const MOT_DE_PASSE_ADMIN = 'IEP1';
 let ecoles = [];
+let ateliers = [];
 let nombreChoix = 5;
 let statutsParEcole = {}; // id -> { total, complets, progression }
 
 async function init() {
   try {
-    [ecoles, nombreChoix] = await Promise.all([
+    [ecoles, ateliers, nombreChoix] = await Promise.all([
       Store.chargerEcoles(),
+      Store.chargerAteliers(),
       Store.chargerConfig().then(c => c.nombreChoix)
     ]);
   } catch (e) {
     afficherAlerte("Impossible de charger la liste des écoles (" + e.message + ").", 'alerte-err');
-    ecoles = SEED_ECOLES;
+    ecoles = SEED_ECOLES; ateliers = SEED_ATELIERS;
   }
   rendre();
   chargerStatuts();
@@ -134,7 +136,8 @@ async function chargerStatuts() {
   await Promise.all(ecoles.map(async (e) => {
     try {
       const data = await Store.chargerEcole(e.id);
-      const enseignants = data.enseignants || [];
+      // Un enseignant qui anime un atelier n'a pas de choix à faire : on ne le compte pas.
+      const enseignants = (data.enseignants || []).filter(x => !estFormateur(x, ateliers));
       const total = enseignants.length;
       const complets = enseignants.filter(x => x.horodatage).length;
       // Progression moyenne (0 à 1) : compte aussi les choix partiels, pas seulement les 5/5,

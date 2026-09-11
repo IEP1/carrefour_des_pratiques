@@ -144,6 +144,9 @@ function rendreResultats() {
       <strong>${resultat.stats.sansChoix}</strong> enseignant(s) n'ont fait aucun choix —
       ${resultat.stats.nonInscritsInclus ? 'ils sont inclus ci-dessus, placés en dernier.' : "ils ne sont <strong>pas</strong> inclus dans la répartition ci-dessus. Voir la liste en bas de page."}
     </p>` : ''}
+    ${resultat.stats.formateurs > 0 ? `<p class="alerte alerte-info">
+      <strong>${resultat.stats.formateurs}</strong> enseignant(s) animent un atelier — ils n'entrent jamais dans le roulement (voir leur nom en tant qu'animateur sur les feuilles d'émargement).
+    </p>` : ''}
   `;
 
   const zone = document.getElementById('resultats');

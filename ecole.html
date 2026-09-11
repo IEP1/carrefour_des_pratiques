@@ -13,6 +13,11 @@
   .grille-choix .pastille-rang { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:50%; background:var(--navy); color:#fff; font-size:0.72rem; font-weight:700; }
   .nom-enseignant { white-space: nowrap; }
   .horodatage { font-size: 0.7rem; color: var(--texte-muted); }
+  .ligne-formateur { opacity: 0.55; }
+  .ligne-formateur .cell-choix { cursor: not-allowed; }
+  .ligne-formateur .cell-choix:hover { background: none; }
+  .ligne-formateur td.nom-enseignant { background: #eceff1 !important; }
+  .badge-formateur { font-size: 0.7rem; color: var(--navy); font-weight: 600; }
   #impression-rempli, #impression-vierge { display: none; }
 
   /* Colonne "Enseignant" fixe pendant le défilement horizontal de la grille (utile sur mobile). */
@@ -124,7 +129,7 @@ injecterEntete('ecoles.html');
 const params = new URLSearchParams(location.search);
 const ecoleId = params.get('id');
 
-let ecole = null, ateliers = [], config = null, donneesEcole = { enseignants: [] };
+let ecole = null, ateliers = [], ateliersTous = [], config = null, donneesEcole = { enseignants: [] };
 
 async function init() {
   if (!ecoleId) { document.body.innerHTML = '<p style="padding:20px;">École introuvable.</p>'; return; }
@@ -133,12 +138,13 @@ async function init() {
       Store.chargerEcoles(), Store.chargerAteliers(), Store.chargerConfig(), Store.chargerEcole(ecoleId)
     ]);
     ecole = ecoles.find(e => e.id === ecoleId) || { id: ecoleId, nom: ecoleId };
+    ateliersTous = at;
     // Les ateliers "à valider" ne sont pas encore confirmés : on ne les propose pas au choix.
     ateliers = at.filter(a => a.statut !== 'a_valider');
     config = cfg; donneesEcole = de || { enseignants: [] };
   } catch (e) {
     afficherAlerte("Erreur de chargement (" + e.message + ").", 'alerte-err');
-    ecole = { nom: ecoleId }; ateliers = SEED_ATELIERS.filter(a => a.statut !== 'a_valider'); config = SEED_CONFIG;
+    ecole = { nom: ecoleId }; ateliersTous = SEED_ATELIERS; ateliers = SEED_ATELIERS.filter(a => a.statut !== 'a_valider'); config = SEED_CONFIG;
   }
   document.getElementById('titre-ecole').textContent = ecole.nom;
   document.getElementById('nb-choix-txt').textContent = config.nombreChoix;
@@ -163,11 +169,16 @@ function rendreGrille() {
     corps.innerHTML = `<tr><td colspan="${ateliers.length + 3}">Aucun enseignant. Ajoutez-en un ci-dessus.</td></tr>`;
     return;
   }
-  corps.innerHTML = donneesEcole.enseignants.map(ens => `
-    <tr>
+  corps.innerHTML = donneesEcole.enseignants.map(ens => {
+    const formateur = estFormateur(ens, ateliersTous);
+    return `
+    <tr class="${formateur ? 'ligne-formateur' : ''}">
       <td class="nom-enseignant">
         <strong>${echapper(ens.nom)}</strong><br>
-        <span class="horodatage">${ens.horodatage ? '✅ Rempli le ' + formaterHorodatage(ens.horodatage) : '⏳ Non rempli'}</span>
+        <span class="${formateur ? 'badge-formateur' : 'horodatage'}">${
+          formateur ? '🎤 Anime un atelier — pas de choix à faire'
+          : (ens.horodatage ? '✅ Rempli le ' + formaterHorodatage(ens.horodatage) : '⏳ Non rempli')
+        }</span>
       </td>
       <td class="no-print">
         <select onchange="changerCycle('${ens.id}', this.value)" style="font-size:0.78rem;padding:3px;">
@@ -175,6 +186,7 @@ function rendreGrille() {
         </select>
       </td>
       ${ateliers.map(a => {
+        if (formateur) return `<td class="cell-choix"></td>`;
         const rang = ens.choix.indexOf(a.id) + 1;
         return `<td class="cell-choix" onclick="basculerChoix('${ens.id}','${a.id}')">${rang > 0 ? `<span class="pastille-rang">${rang}</span>` : ''}</td>`;
       }).join('')}
@@ -185,7 +197,8 @@ function rendreGrille() {
         </div>
       </td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function formaterHorodatage(iso) {
@@ -196,6 +209,7 @@ function formaterHorodatage(iso) {
 function basculerChoix(ensId, atelierId) {
   const ens = donneesEcole.enseignants.find(e => e.id === ensId);
   if (!ens) return;
+  if (estFormateur(ens, ateliersTous)) return; // anime un atelier : pas de choix possible
   const idx = ens.choix.indexOf(atelierId);
   if (idx >= 0) {
     ens.choix.splice(idx, 1);
