@@ -50,6 +50,30 @@
       <p id="admin-erreur" class="alerte alerte-err" style="display:none;">Mot de passe incorrect.</p>
     </div>
     <div id="admin-controles" style="display:none;">
+      <h3 style="margin-top:0;">Sauvegardes</h3>
+      <p class="intro">Une copie automatique de toutes les données est faite chaque jour (les 14 dernières sont conservées). Téléchargez en plus un fichier sur votre ordinateur avant l'envoi du mail aux directeurs, puis régulièrement pendant la saisie.</p>
+      <div class="groupe-btns" style="margin-bottom:12px;">
+        <button class="btn btn-primaire" id="btn-sauvegarde-telecharger">⬇ Télécharger une sauvegarde</button>
+      </div>
+      <div class="ligne-champs" style="align-items:flex-end;margin-bottom:12px;">
+        <div class="champ">
+          <label for="fichier-sauvegarde">Restaurer depuis un fichier de sauvegarde</label>
+          <input type="file" id="fichier-sauvegarde" accept=".json,application/json">
+        </div>
+        <div class="champ" style="max-width:200px;">
+          <button class="btn btn-secondaire" id="btn-restaurer-fichier" style="width:100%;">Restaurer ce fichier</button>
+        </div>
+      </div>
+      <div class="ligne-champs" style="align-items:flex-end;margin-bottom:18px;">
+        <div class="champ">
+          <label for="liste-sauvegardes-auto">Ou restaurer une sauvegarde automatique</label>
+          <select id="liste-sauvegardes-auto"><option>Chargement…</option></select>
+        </div>
+        <div class="champ" style="max-width:200px;">
+          <button class="btn btn-secondaire" id="btn-restaurer-auto" style="width:100%;">Restaurer celle-ci</button>
+        </div>
+      </div>
+      <hr style="border:none;border-top:1px solid var(--bordure);margin:0 0 16px;">
       <h3 style="margin-top:0;">Réinitialiser des écoles</h3>
       <p class="intro">Sélectionnez une ou plusieurs écoles puis choisissez une action. Ces actions sont irréversibles et immédiates.</p>
       <div id="liste-admin-ecoles" class="liste-check-admin"></div>
@@ -221,6 +245,82 @@ document.getElementById('btn-admin-valider').addEventListener('click', () => {
 });
 document.getElementById('admin-mdp').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('btn-admin-valider').click();
+});
+
+/* ===== Sauvegardes ===== */
+function formaterDateHeure(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('fr-FR') + ' à ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+}
+
+async function chargerListeSauvegardesAuto() {
+  const sel = document.getElementById('liste-sauvegardes-auto');
+  try {
+    const liste = await Store.listerSauvegardesAuto();
+    sel.innerHTML = liste.length === 0
+      ? '<option value="">Aucune pour l\'instant</option>'
+      : liste.map(l => `<option value="${echapper(l.path)}">${l.path === 'backups/avant-restauration' ? 'Avant la dernière restauration' : 'Automatique'} — ${formaterDateHeure(l.cree)}</option>`).join('');
+  } catch (e) {
+    sel.innerHTML = `<option value="">Erreur de chargement (${echapper(e.message)})</option>`;
+  }
+}
+
+document.getElementById('btn-admin-valider').addEventListener('click', () => {
+  if (document.getElementById('admin-mdp').value === MOT_DE_PASSE_ADMIN) chargerListeSauvegardesAuto();
+});
+
+document.getElementById('btn-sauvegarde-telecharger').addEventListener('click', async () => {
+  document.getElementById('admin-journal').textContent = '';
+  try {
+    const sauv = await Store.creerSauvegarde();
+    const blob = new Blob([JSON.stringify(sauv)], { type: 'application/json' });
+    const d = new Date();
+    const p = n => String(n).padStart(2, '0');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `sauvegarde-carrefour-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}h${p(d.getMinutes())}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    adminLog(`✓ Sauvegarde téléchargée (${Object.keys(sauv.documents).length} documents).`);
+  } catch (err) {
+    adminLog(`✗ Échec de la sauvegarde : ${err.message}`);
+  }
+});
+
+async function restaurerDepuis(sauv, libelleSource) {
+  document.getElementById('admin-journal').textContent = '';
+  try {
+    const chemins = Store.verifierSauvegarde(sauv);
+    const nbEcoles = chemins.filter(p => p.startsWith('ecoles/')).length;
+    if (!confirm(`Restaurer ${libelleSource} (créée le ${formaterDateHeure(sauv.cree)}) ?\n\n` +
+        `${chemins.length} documents dont ${nbEcoles} écoles : les données ACTUELLES seront remplacées par celles de cette sauvegarde.\n` +
+        `Une copie de l'état actuel est faite juste avant (« Avant la dernière restauration »), pour pouvoir annuler.`)) return;
+    const n = await Store.restaurerSauvegarde(sauv);
+    adminLog(`✓ ${n} documents restaurés. La page va se recharger…`);
+    setTimeout(() => location.reload(), 1500);
+  } catch (err) {
+    adminLog(`✗ Restauration impossible : ${err.message}`);
+  }
+}
+
+document.getElementById('btn-restaurer-fichier').addEventListener('click', async () => {
+  const fichier = document.getElementById('fichier-sauvegarde').files[0];
+  if (!fichier) { alert('Choisissez d\'abord un fichier de sauvegarde (.json).'); return; }
+  let sauv;
+  try { sauv = JSON.parse(await fichier.text()); }
+  catch (e) { adminLog('✗ Ce fichier n\'est pas un JSON lisible.'); return; }
+  restaurerDepuis(sauv, `le fichier « ${fichier.name} »`);
+});
+
+document.getElementById('btn-restaurer-auto').addEventListener('click', async () => {
+  const path = document.getElementById('liste-sauvegardes-auto').value;
+  if (!path) { alert('Aucune sauvegarde automatique disponible.'); return; }
+  try {
+    const sauv = await Store.chargerSauvegardeAuto(path);
+    restaurerDepuis(sauv, 'la sauvegarde automatique sélectionnée');
+  } catch (e) {
+    adminLog(`✗ Lecture impossible : ${e.message}`);
+  }
 });
 
 function ecolesSelectionnees() {

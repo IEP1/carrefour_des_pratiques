@@ -1,0 +1,40 @@
+name: Sauvegarde quotidienne des données
+
+# Copie toutes les données (ateliers, écoles, enseignants, choix, répartition) dans une ligne
+# "backups/auto-N" de la même base Supabase. 14 emplacements qui tournent (on écrase la copie vieille
+# de 14 jours) : pas besoin de pouvoir supprimer. Restauration depuis l'espace Administration du site.
+# Sert aussi de "ping" quotidien qui évite la mise en pause du projet Supabase gratuit.
+on:
+  schedule:
+    - cron: '0 14 * * *'   # tous les jours à 14h UTC (1h du matin en Nouvelle-Calédonie)
+  workflow_dispatch:        # lancement manuel possible depuis l'onglet Actions
+
+jobs:
+  sauvegarde:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sauvegarder les données dans Supabase
+        run: |
+          python3 - <<'PY'
+          import json, datetime, urllib.request
+
+          URL = "https://xregaqwolnrhxghpkkjo.supabase.co/rest/v1/documents"
+          KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhyZWdhcXdvbG5yaHhnaHBra2pvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgzMzY5MDIsImV4cCI6MjEwMzkxMjkwMn0.Z3jBdSJdUynS1lM-TiSFK7JMRLbzl66lzhlVRtBfem8"
+          H = {"apikey": KEY, "Authorization": "Bearer " + KEY}
+
+          rows = json.load(urllib.request.urlopen(urllib.request.Request(URL + "?select=path,data&path=not.like.backups/*", headers=H)))
+          paths = {r["path"] for r in rows}
+          if "ateliers.json" not in paths or "ecoles.json" not in paths:
+              raise SystemExit("Lecture incomplete (ateliers ou ecoles manquants) : sauvegarde annulee pour ne pas ecraser une bonne copie.")
+
+          now = datetime.datetime.now(datetime.timezone.utc)
+          slot = now.timetuple().tm_yday % 14
+          body = json.dumps({"path": "backups/auto-%d" % slot, "data": {
+              "format": "carrefour-sauvegarde-v1",
+              "cree": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "documents": {r["path"]: r["data"] for r in rows}}}).encode()
+          req = urllib.request.Request(URL, data=body, method="POST",
+              headers={**H, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal"})
+          urllib.request.urlopen(req)
+          print("Sauvegarde OK : backups/auto-%d (%d documents, %d octets)" % (slot, len(rows), len(body)))
+          PY

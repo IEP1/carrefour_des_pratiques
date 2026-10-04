@@ -174,7 +174,12 @@ function rendreGrille() {
     return `
     <tr class="${formateur ? 'ligne-formateur' : ''}">
       <td class="nom-enseignant">
-        <strong>${echapper(ens.nom)}</strong><br>
+        ${ensEnEdition === ens.id
+          ? `<input type="text" id="input-renommer" value="${echapper(ens.nom)}" style="min-width:180px;padding:4px 6px;"
+               onkeydown="if(event.key==='Enter'){validerRenommage('${ens.id}')}else if(event.key==='Escape'){annulerRenommage()}">
+             <button class="btn btn-primaire btn-sm" title="Valider le nouveau nom" onclick="validerRenommage('${ens.id}')">✓</button>
+             <button class="btn btn-secondaire btn-sm" title="Annuler" onclick="annulerRenommage()">✕</button>`
+          : `<strong>${echapper(ens.nom)}</strong>`}<br>
         <span class="${formateur ? 'badge-formateur' : 'horodatage'}">${
           formateur ? '🎤 Anime un atelier — pas de choix à faire'
           : (ens.horodatage ? '✅ Rempli le ' + formaterHorodatage(ens.horodatage) : '⏳ Non rempli')
@@ -192,6 +197,7 @@ function rendreGrille() {
       }).join('')}
       <td class="no-print">
         <div class="groupe-btns" style="flex-wrap:nowrap;">
+          <button class="btn btn-secondaire btn-sm" title="Modifier le nom de cet enseignant" onclick="demarrerRenommage('${ens.id}')">✏️</button>
           <button class="btn btn-secondaire btn-sm" title="Effacer les choix de cet enseignant" onclick="effacerChoixEnseignant('${ens.id}')">🧹</button>
           <button class="btn btn-danger btn-sm" title="Retirer cet enseignant" onclick="supprimerEnseignant('${ens.id}')">✕</button>
         </div>
@@ -263,6 +269,35 @@ function demanderConfirmation(titre, message, onConfirmer) {
   const fermer = () => { modale.style.display = 'none'; btnOui.onclick = null; btnNon.onclick = null; };
   btnOui.onclick = () => { fermer(); onConfirmer(); };
   btnNon.onclick = fermer;
+}
+
+/* ===== Modifier le nom d'un enseignant (erreur dans la liste fournie, faute de frappe…) ===== */
+let ensEnEdition = null;
+
+function demarrerRenommage(id) {
+  ensEnEdition = id;
+  rendreGrille();
+  const champ = document.getElementById('input-renommer');
+  if (champ) { champ.focus(); champ.select(); }
+}
+
+function annulerRenommage() {
+  ensEnEdition = null;
+  rendreGrille();
+}
+
+function validerRenommage(id) {
+  const ens = donneesEcole.enseignants.find(e => e.id === id);
+  const champ = document.getElementById('input-renommer');
+  if (!ens || !champ) return;
+  const nouveau = champ.value.replace(/\s+/g, ' ').trim();
+  if (!nouveau) { champ.focus(); return; }
+  ensEnEdition = null;
+  if (nouveau !== ens.nom) {
+    ens.nom = nouveau;
+    marquerModifie();
+  }
+  rendreGrille();
 }
 
 function supprimerEnseignant(id) {

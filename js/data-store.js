@@ -58,6 +58,54 @@ const Store = {
     await sauvegarderJSON('repartition.json', rep, 'Nouvelle répartition calculée');
   },
 
+  /* ===== Sauvegardes ===== */
+  FORMAT_SAUVEGARDE: 'carrefour-sauvegarde-v1',
+
+  /** Instantané complet de toutes les données (config, ateliers, écoles, enseignants, répartition). */
+  async creerSauvegarde() {
+    return {
+      format: this.FORMAT_SAUVEGARDE,
+      cree: new Date().toISOString(),
+      documents: await chargerTousLesDocuments()
+    };
+  },
+
+  /** Chemins qu'une restauration a le droit d'écrire (jamais autre chose, même si le fichier en contient). */
+  _cheminRestaurable(path) {
+    return ['config.json', 'ateliers.json', 'ecoles.json', 'repartition.json'].includes(path)
+      || /^ecoles\/[a-z0-9-]+\.json$/.test(path);
+  },
+
+  /** Vérifie qu'un objet est bien une sauvegarde valide ; renvoie la liste des chemins qui seront restaurés. */
+  verifierSauvegarde(sauv) {
+    if (!sauv || sauv.format !== this.FORMAT_SAUVEGARDE || typeof sauv.documents !== 'object' || !sauv.documents) {
+      throw new Error("Ce fichier n'est pas une sauvegarde valide de l'application.");
+    }
+    const chemins = Object.keys(sauv.documents).filter(p => this._cheminRestaurable(p));
+    if (!chemins.includes('ateliers.json') || !chemins.includes('ecoles.json')) {
+      throw new Error("Sauvegarde incomplète (ateliers ou liste des écoles manquants) : restauration refusée.");
+    }
+    return chemins;
+  },
+
+  /** Remplace les données actuelles par celles d'une sauvegarde. Garde d'abord une copie de l'état
+   *  actuel dans "backups/avant-restauration" pour pouvoir annuler. */
+  async restaurerSauvegarde(sauv) {
+    const chemins = this.verifierSauvegarde(sauv);
+    await sauvegarderJSON('backups/avant-restauration', await this.creerSauvegarde(), 'Copie avant restauration');
+    for (const p of chemins) await sauvegarderJSON(p, sauv.documents[p], 'Restauration');
+    return chemins.length;
+  },
+
+  async listerSauvegardesAuto() {
+    const lignes = await listerSauvegardesAuto();
+    return lignes.filter(l => l.cree).sort((a, b) => b.cree.localeCompare(a.cree));
+  },
+  async chargerSauvegardeAuto(path) {
+    const { data } = await chargerJSON(path, null);
+    return data;
+  },
+
   /** Recalcule la répartition à partir de l'état actuel de toutes les écoles et l'enregistre.
    *  Nécessite js/algo.js (calculerRepartition). Sûr à appeler automatiquement à chaque
    *  enregistrement d'école : l'horodatage garantit qu'un enseignant déjà placé ne peut jamais

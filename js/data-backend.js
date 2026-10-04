@@ -48,6 +48,26 @@ async function sauvegarderJSON(path, data, message) {
   }
 }
 
+/** Tous les documents de données (config, ateliers, écoles, répartition), hors sauvegardes.
+ *  Retourne { chemin: données }. Sert aux sauvegardes complètes. */
+async function chargerTousLesDocuments() {
+  const url = `${SUPABASE_URL}/rest/v1/documents?select=path,data&path=not.like.backups/*`;
+  const res = await fetch(url, { headers: entetesSupabase(false) });
+  if (!res.ok) throw new Error(`Erreur Supabase ${res.status} (lecture complète)`);
+  const lignes = await res.json();
+  const tout = {};
+  lignes.forEach(l => { tout[l.path] = l.data; });
+  return tout;
+}
+
+/** Liste les sauvegardes automatiques enregistrées dans Supabase : [{ path, cree }]. */
+async function listerSauvegardesAuto() {
+  const url = `${SUPABASE_URL}/rest/v1/documents?select=path,cree:data->>cree&path=like.backups/*`;
+  const res = await fetch(url, { headers: entetesSupabase(false) });
+  if (!res.ok) throw new Error(`Erreur Supabase ${res.status} (liste des sauvegardes)`);
+  return res.json();
+}
+
 // Conservés pour compatibilité avec le code existant (avant Supabase, ces fonctions vérifiaient
 // qu'un token GitHub était configuré côté navigateur). L'accès Supabase est toujours disponible.
 const ghConfig = { isConfigured: () => true };
