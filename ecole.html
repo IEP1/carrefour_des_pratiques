@@ -146,8 +146,20 @@ async function init() {
     afficherAlerte("Erreur de chargement (" + e.message + ").", 'alerte-err');
     ecole = { nom: ecoleId }; ateliersTous = SEED_ATELIERS; ateliers = SEED_ATELIERS.filter(a => a.statut !== 'a_valider'); config = SEED_CONFIG;
   }
+  if (ecole.participe === false && !estAdmin()) {
+    document.querySelector('main').innerHTML = `
+      <div class="carte" style="max-width:520px;margin:40px auto;">
+        <h3 style="margin-top:0;">Cette école ne participe pas à l'événement</h3>
+        <p class="intro">Aucune saisie n'est attendue pour ${echapper(ecole.nom)}. En cas de doute, contactez l'IEP1.</p>
+        <p style="margin:0;"><a href="ecoles.html">← Retour à la liste des écoles</a></p>
+      </div>`;
+    return;
+  }
   document.getElementById('titre-ecole').textContent = ecole.nom;
   document.getElementById('nb-choix-txt').textContent = config.nombreChoix;
+  if (ecole.participe === false) {
+    afficherAlerte("École retirée de l'événement : elle n'apparaît pas pour les directeurs et n'est pas prise en compte dans la répartition.", 'alerte-warn');
+  }
   rendreGrille();
 }
 

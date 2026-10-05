@@ -40,9 +40,11 @@ const Store = {
     await sauvegarderJSON(`ecoles/${ecoleId}.json`, data, `Mise à jour école ${nomEcole || ecoleId}`);
   },
 
-  /** Charge la liste des écoles ET le contenu (enseignants/choix) de chacune. */
-  async chargerToutesLesEcolesAvecDonnees() {
-    const ecoles = await this.chargerEcoles();
+  /** Charge la liste des écoles ET le contenu (enseignants/choix) de chacune.
+   *  Les écoles retirées de l'événement (participe === false) sont ignorées, sauf si on le demande. */
+  async chargerToutesLesEcolesAvecDonnees({ inclureRetirees = false } = {}) {
+    const toutes = await this.chargerEcoles();
+    const ecoles = inclureRetirees ? toutes : toutes.filter(e => e.participe !== false);
     const resultats = await Promise.all(ecoles.map(async e => ({
       ...e,
       donnees: await this.chargerEcole(e.id)

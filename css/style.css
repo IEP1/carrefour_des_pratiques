@@ -76,6 +76,9 @@ a { color: var(--teal); }
 }
 .entete nav a:hover { background: rgba(255,255,255,0.18); transform: translateY(-1px); }
 .entete nav a.actif { background: var(--teal); }
+.entete-spacer { display: flex; justify-content: flex-end; align-items: center; }
+.btn-cadenas { background: rgba(255,255,255,0.08); color: #fff; border: none; border-radius: 999px; padding: 8px 14px; cursor: pointer; font-size: 0.9rem; opacity: .6; transition: opacity .2s, background .2s; }
+.btn-cadenas:hover { opacity: 1; background: rgba(255,255,255,0.18); }
 
 main { max-width: 1180px; margin: 0 auto; padding: 24px; }
 
@@ -216,7 +219,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--teal); outl
   .entete h1 { font-size: 0.92rem; }
   .entete .sous-titre { font-size: 0.72rem; }
   .entete .titres { min-width: 0; }
-  .entete-spacer { display: none; }
+  .entete-spacer { order: 2; }
   .entete nav { order: 3; width: 100%; flex: none; }
   .entete nav a { flex: 1; text-align: center; padding: 9px 6px; font-size: 0.78rem; }
   #btn-connexion-donnees { font-size: 0.72rem; padding: 6px 8px; }

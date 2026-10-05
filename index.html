@@ -43,7 +43,7 @@
   <div class="barre-actions no-print">
     <div>
       <h2>Liste des ateliers</h2>
-      <p class="intro" style="margin:0;">Ajoutez, modifiez ou retirez des ateliers. Statut : <span class="badge badge-a-valider">à valider</span> / <span class="badge badge-valide">validé</span></p>
+      <p class="intro" id="intro-ateliers" style="margin:0;">Ajoutez, modifiez ou retirez des ateliers. Statut : <span class="badge badge-a-valider">à valider</span> / <span class="badge badge-valide">validé</span></p>
     </div>
     <div class="groupe-btns">
       <button class="btn btn-secondaire" id="btn-config">⚙ Paramètres de l'événement</button>
@@ -64,8 +64,8 @@
             <th style="width:34%;">Atelier</th>
             <th style="width:14%;">Cycles</th>
             <th style="width:24%;">Intervenant(s)</th>
-            <th style="width:12%;">Statut</th>
-            <th class="no-print" style="width:16%;">Actions</th>
+            <th style="width:12%;" id="th-statut">Statut</th>
+            <th class="no-print" style="width:16%;" id="th-actions">Actions</th>
           </tr>
         </thead>
         <tbody id="corps-ateliers">
@@ -90,6 +90,7 @@
 <script>
 injecterEntete('index.html');
 
+const admin = estAdmin();
 let ateliers = [];
 let config = null;
 let nomsEnseignantsConnus = []; // [{nom, ecoleNom}] — pour les suggestions du champ Intervenant(s)
@@ -103,15 +104,23 @@ async function init() {
   }
   document.getElementById('ep-titre').textContent = config.titreEvenement;
   document.getElementById('ep-sous').textContent = `${formaterDate(config.date)} — ${config.lieu}`;
+  if (!admin) {
+    // Vue directeurs : simple présentation des ateliers (consultation et impression), rien à modifier.
+    document.getElementById('btn-config').style.display = 'none';
+    document.getElementById('btn-ajouter').style.display = 'none';
+    document.getElementById('th-statut').style.display = 'none';
+    document.getElementById('th-actions').style.display = 'none';
+    document.getElementById('intro-ateliers').textContent = 'Les ateliers proposés lors de la journée. Vous pouvez imprimer cette liste pour la transmettre à vos enseignants.';
+  }
   rendreTableau();
   // Chargé à part, en tâche de fond : ne doit jamais bloquer ni casser l'affichage de la liste
   // des ateliers si une école a un document corrompu — juste priver les suggestions de qqes noms.
-  chargerNomsEnseignants();
+  if (admin) chargerNomsEnseignants();
 }
 
 async function chargerNomsEnseignants() {
   try {
-    const ecoles = await Store.chargerToutesLesEcolesAvecDonnees();
+    const ecoles = await Store.chargerToutesLesEcolesAvecDonnees({ inclureRetirees: true });
     const vus = new Set();
     nomsEnseignantsConnus = [];
     ecoles.forEach(ec => (ec.donnees.enseignants || []).forEach(ens => {
@@ -138,20 +147,24 @@ function formaterDate(iso) {
 function rendreTableau() {
   const corps = document.getElementById('corps-ateliers');
   const recap = document.getElementById('recap-statuts');
-  if (ateliers.length === 0) {
-    corps.innerHTML = '<tr><td colspan="5">Aucun atelier pour le moment.</td></tr>';
+  // Les directeurs ne voient que les ateliers validés (les autres ne sont pas proposés au choix).
+  const visibles = admin ? ateliers : ateliers.filter(a => a.statut === 'valide');
+  if (visibles.length === 0) {
+    corps.innerHTML = `<tr><td colspan="${admin ? 5 : 3}">Aucun atelier pour le moment.</td></tr>`;
     recap.textContent = '';
     return;
   }
   const nbValides = ateliers.filter(a => a.statut === 'valide').length;
   const nbAValider = ateliers.length - nbValides;
-  recap.innerHTML = `<strong>${ateliers.length}</strong> atelier(s) au total — <strong>${nbValides}</strong> validé(s), <strong>${nbAValider}</strong> à valider.`;
-  corps.innerHTML = ateliers.map(a => `
+  recap.innerHTML = admin
+    ? `<strong>${ateliers.length}</strong> atelier(s) au total — <strong>${nbValides}</strong> validé(s), <strong>${nbAValider}</strong> à valider.`
+    : '';
+  corps.innerHTML = visibles.map(a => `
     <tr class="${a.statut === 'a_valider' ? 'ligne-a-valider' : 'ligne-valide'}">
       <td><strong>${echapper(a.titre)}</strong></td>
       <td>${a.cycles.map(c => `<span class="puce-cycle">${c}</span>`).join(' ')}</td>
       <td>${a.intervenants.map(echapper).join(', ')}</td>
-      <td>
+      ${admin ? `<td>
         <span class="badge ${a.statut === 'a_valider' ? 'badge-a-valider' : 'badge-valide'}">
           ${a.statut === 'a_valider' ? 'À valider' : 'Validé'}
         </span>
@@ -161,7 +174,7 @@ function rendreTableau() {
           <button class="btn btn-secondaire btn-sm" onclick="ouvrirForm('${a.id}')">Modifier</button>
           <button class="btn btn-danger btn-sm" onclick="supprimerAtelier('${a.id}')">Retirer</button>
         </div>
-      </td>
+      </td>` : ''}
     </tr>
   `).join('');
 }
