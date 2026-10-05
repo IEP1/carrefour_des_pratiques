@@ -187,10 +187,14 @@ function rendreGrille() {
     <tr class="${formateur ? 'ligne-formateur' : ''}">
       <td class="nom-enseignant">
         ${ensEnEdition === ens.id
-          ? `<input type="text" id="input-renommer" value="${echapper(ens.nom)}" style="min-width:180px;padding:4px 6px;"
-               onkeydown="if(event.key==='Enter'){validerRenommage('${ens.id}')}else if(event.key==='Escape'){annulerRenommage()}">
-             <button class="btn btn-primaire btn-sm" title="Valider le nouveau nom" onclick="validerRenommage('${ens.id}')">✓</button>
-             <button class="btn btn-secondaire btn-sm" title="Annuler" onclick="annulerRenommage()">✕</button>`
+          ? `<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;white-space:normal;">
+               <input type="text" id="input-renommer" value="${echapper(ens.nom)}" style="flex:1 1 150px;min-width:120px;padding:4px 6px;"
+                 onkeydown="if(event.key==='Enter'){validerRenommage('${ens.id}')}else if(event.key==='Escape'){annulerRenommage()}">
+               <span style="display:inline-flex;gap:4px;">
+                 <button class="btn btn-primaire btn-sm" title="Valider le nouveau nom" onclick="validerRenommage('${ens.id}')">✓</button>
+                 <button class="btn btn-secondaire btn-sm" title="Annuler" onclick="annulerRenommage()">✕</button>
+               </span>
+             </div>`
           : `<strong>${echapper(ens.nom)}</strong>`}<br>
         <span class="${formateur ? 'badge-formateur' : 'horodatage'}">${
           formateur ? '🎤 Anime un atelier — pas de choix à faire'
