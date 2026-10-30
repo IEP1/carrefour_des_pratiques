@@ -82,7 +82,8 @@ const PAGES_NAV = [
   { href: 'index.html', label: 'Ateliers' },
   { href: 'ecoles.html', label: 'Écoles' },
   { href: 'repartition.html', label: 'Répartition', admin: true },
-  { href: 'emargement.html', label: "Émargement", admin: true }
+  { href: 'emargement.html', label: "Émargement", admin: true },
+  { href: 'recapitulatif.html', label: 'Récapitulatif', admin: true }
 ];
 
 function injecterEntete(pageActive) {

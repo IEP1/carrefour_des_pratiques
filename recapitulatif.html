@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Récapitulatif par école — Carrefour des pratiques IEP1</title>
+<link rel="icon" href="assets/logo-iep1.png">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .col-nb { text-align: center; white-space: nowrap; }
+  .col-telecharger { text-align: center; white-space: nowrap; }
+  .ecole-a-verifier { color: var(--corail); font-weight: 700; }
+</style>
+</head>
+<body>
+<div id="entete-app"></div>
+
+<main>
+  <div class="no-print">
+    <h2>Récapitulatif par école</h2>
+    <p class="intro">Un fichier PDF en couleur par école : une page de garde, puis la liste de ses enseignants avec l'atelier suivi à chaque créneau. Le fichier se télécharge directement. « Toutes les écoles » produit un seul PDF avec les écoles à la suite.</p>
+  </div>
+
+  <div id="alerte-zone"></div>
+
+  <div class="carte no-print">
+    <div class="groupe-btns" style="margin-bottom:12px;">
+      <button class="btn btn-navy" id="btn-toutes">⬇ Télécharger toutes les écoles (un seul PDF)</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>École</th><th class="col-nb">Enseignants</th><th class="col-telecharger">PDF</th></tr></thead>
+        <tbody id="corps-tableau"><tr><td colspan="3">Chargement…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<p class="pied no-print">IEP1 — Carrefour des pratiques</p>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="js/data-backend.js"></script>
+<script src="js/seed-data.js"></script>
+<script src="js/data-store.js"></script>
+<script src="js/layout.js"></script>
+<script>
+injecterEntete('recapitulatif.html');
+
+let ateliers = [], config = null, resultat = null, ecoles = [];
+let problemes = {};   // ecoleId -> ["Nom : raison", …]
+
+async function init() {
+  try {
+    [ateliers, config, resultat, ecoles] = await Promise.all([
+      Store.chargerAteliers(), Store.chargerConfig(), Store.chargerRepartition(), Store.chargerToutesLesEcolesAvecDonnees()
+    ]);
+  } catch (e) {
+    afficherAlerte("Erreur de chargement (" + e.message + ").", 'alerte-err');
+    document.getElementById('corps-tableau').innerHTML = '';
+    return;
+  }
+  if (!resultat) {
+    afficherAlerte("Aucune répartition n'a encore été calculée. Rendez-vous sur la page « Répartition » d'abord.", 'alerte-warn');
+    document.getElementById('corps-tableau').innerHTML = '';
+    return;
+  }
+  ecoles = ecoles.slice().sort((a, b) => a.nom.localeCompare(b.nom));
+  ecoles.forEach(ec => {
+    problemes[ec.id] = (ec.donnees.enseignants || [])
+      .map(ens => ({ ens, prog: programmeEnseignant(ens) }))
+      .filter(x => x.prog.probleme)
+      .map(x => `${x.ens.nom} (${ec.nom}) : ${x.prog.probleme}`);
+  });
+  const tous = [].concat(...ecoles.map(ec => problemes[ec.id]));
+  if (tous.length > 0) {
+    afficherAlerte(`<strong>Export bloqué pour les écoles concernées :</strong> chaque enseignant doit être placé sur tous les créneaux avant de produire les PDF.<br>${tous.slice(0, 10).map(echapper).join('<br>')}${tous.length > 10 ? `<br>… et ${tous.length - 10} autre(s).` : ''}<br>Ouvrez la page « Répartition » pour mettre à jour le calcul, puis revenez ici.`, 'alerte-warn');
+  } else {
+    afficherAlerte(`Basé sur la dernière répartition calculée le ${new Date(resultat.genereLe).toLocaleString('fr-FR')}. Si les choix ont changé depuis, ouvrez d'abord la page « Répartition » pour la mettre à jour.`, 'alerte-info');
+  }
+  rendreTableau(tous.length === 0);
+}
+
+function afficherAlerte(msg, classe) {
+  document.getElementById('alerte-zone').innerHTML = `<div class="alerte ${classe} no-print">${msg}</div>`;
+}
+function echapper(s) {
+  const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML;
+}
+
+function rendreTableau(toutesPretes) {
+  document.getElementById('corps-tableau').innerHTML = ecoles.map(ec => {
+    const nbProblemes = problemes[ec.id].length;
+    return `
+    <tr>
+      <td><strong>${echapper(ec.nom)}</strong></td>
+      <td class="col-nb">${(ec.donnees.enseignants || []).length}</td>
+      <td class="col-telecharger">${nbProblemes > 0
+        ? `<span class="ecole-a-verifier">⚠ ${nbProblemes} à vérifier</span>`
+        : `<button class="btn btn-secondaire btn-sm btn-ecole" data-ecole="${echapper(ec.id)}">⬇ Télécharger</button>`}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="3">Aucune école.</td></tr>';
+  document.querySelectorAll('.btn-ecole').forEach(btn => {
+    btn.addEventListener('click', () => telecharger(ecoles.filter(e => e.id === btn.dataset.ecole), btn));
+  });
+  const btnToutes = document.getElementById('btn-toutes');
+  btnToutes.disabled = !toutesPretes || ecoles.length === 0;
+  btnToutes.addEventListener('click', () => telecharger(ecoles, btnToutes));
+}
+
+/** "2026-11-04" -> "Mercredi 4 novembre 2026" */
+function dateLongue(iso) {
+  if (!iso) return '';
+  const t = new Date(iso + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+/** Programme d'un enseignant : { cellules: [{ texte, libre? }, …] } (une par créneau), ou { probleme } si l'on ne
+ *  peut pas garantir sa présence sur chaque créneau (règle fondamentale : on n'imprime alors rien). */
+function programmeEnseignant(ens) {
+  const placement = resultat.parEnseignant.find(p => p.id === ens.id);
+  if (placement) {
+    const cellules = config.sessions.map(s => {
+      const atelier = ateliers.find(a => a.id === placement.sessions[s.id]);
+      return atelier ? { texte: atelier.titre } : null;
+    });
+    return cellules.includes(null) ? { probleme: "n'a pas d'atelier à chaque créneau" } : { cellules };
+  }
+  // Intervenant : il anime son atelier, et reste libre le créneau où l'atelier est fermé.
+  if (estFormateur(ens, ateliers)) {
+    const nom = normaliserNom(ens.nom);
+    const atelier = ateliers.find(a => a.statut !== 'a_valider' && (a.intervenants || []).some(i => normaliserNom(i) === nom));
+    if (!atelier) return { probleme: "intervenant d'un atelier non validé" };
+    return { cellules: config.sessions.map(s => {
+      const groupe = (resultat.parSession[s.id] || []).find(g => g.atelierId === atelier.id);
+      if (!groupe) return null;
+      return groupe.ferme ? { texte: 'Libre (choisit lui-même)', libre: true } : { texte: 'Intervenant(e) : ' + atelier.titre };
+    }) .map(c => c || { texte: '—' }) };
+  }
+  return { probleme: "absent de la répartition (aucun vœu enregistré ? voir « Répartir aussi les non-inscrits »)" };
+}
+
+/* ===== Génération du PDF (jsPDF + autoTable) ===== */
+const COUL = {
+  navy: [15, 41, 66], bleu: [0, 94, 134], bleuClair: [225, 238, 243], teal: [57, 178, 197],
+  orange: [244, 122, 75], muted: [62, 84, 104], blanc: [255, 255, 255]
+};
+const MARGE = 15, LARGEUR = 210, HAUTEUR = 297;
+
+/** Texte compatible avec les polices standard d'un PDF (caractères Latin-1). */
+function pdfTexte(s) {
+  return String(s ?? '')
+    .replace(/[ -​  ]/g, ' ')
+    .replace(/[‘’‛]/g, "'").replace(/[“”]/g, '"')
+    .replace(/[‐-―]/g, '-').replace(/…/g, '...')
+    .replace(/œ/g, 'oe').replace(/Œ/g, 'OE')
+    .replace(/[^\u0000-ÿ]/g, '');
+}
+
+/** Charge un logo et le réduit (le logo IEP1 fait 1254 px de côté : inutile de l'embarquer tel quel dans le PDF). */
+async function chargerImage(url, format) {
+  const blob = await (await fetch(url)).blob();
+  const img = await new Promise((resolve, reject) => {
+    const i = new Image();
+    i.onload = () => resolve(i); i.onerror = () => reject(new Error('logo illisible : ' + url));
+    i.src = URL.createObjectURL(blob);
+  });
+  const echelle = Math.min(1, 600 / img.naturalWidth);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(img.naturalWidth * echelle); canvas.height = Math.round(img.naturalHeight * echelle);
+  const ctx = canvas.getContext('2d');
+  if (format === 'JPEG') { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  URL.revokeObjectURL(img.src);
+  return { dataUrl: canvas.toDataURL(format === 'JPEG' ? 'image/jpeg' : 'image/png', 0.92), format, ratio: img.naturalWidth / img.naturalHeight };
+}
+
+function dessinerEntete(doc, logos) {
+  const h = 14;
+  let x = MARGE;
+  [['denc', logos.denc], ['iep1', logos.iep1]].forEach(([alias, logo]) => {
+    const w = h * logo.ratio;
+    doc.addImage(logo.dataUrl, logo.format, x, 9, w, h, alias, 'FAST');
+    x += w + 5;
+  });
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...COUL.muted);
+  doc.text('ANIMATION PÉDAGOGIQUE', LARGEUR - MARGE, 11.5, { align: 'right' });
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11.5); doc.setTextColor(...COUL.navy);
+  doc.text(pdfTexte(config.titreEvenement), LARGEUR - MARGE, 16.5, { align: 'right' });
+  doc.setFontSize(9.5);
+  doc.text(pdfTexte(dateLongue(config.date)), LARGEUR - MARGE, 21, { align: 'right' });
+  doc.setFont('helvetica', 'normal');
+  doc.text(pdfTexte(config.lieu), LARGEUR - MARGE, 25, { align: 'right' });
+  doc.setDrawColor(...COUL.navy); doc.setLineWidth(0.6);
+  doc.line(MARGE, 28, LARGEUR - MARGE, 28);
+}
+
+function dessinerCouverture(doc, ec, logos) {
+  dessinerEntete(doc, logos);
+  doc.setFillColor(...COUL.navy); doc.rect(0, 62, LARGEUR, 34, 'F');
+  doc.setFillColor(...COUL.orange); doc.rect(0, 96, LARGEUR, 2.2, 'F');
+  doc.setTextColor(...COUL.blanc); doc.setFont('helvetica', 'bold'); doc.setFontSize(25);
+  doc.text('Récapitulatif de la répartition', LARGEUR / 2, 83, { align: 'center' });
+
+  doc.setTextColor(...COUL.bleu); doc.setFontSize(32);
+  const nomLignes = doc.splitTextToSize(pdfTexte(ec.nom), LARGEUR - 2 * MARGE - 10);
+  doc.text(nomLignes, LARGEUR / 2, 125, { align: 'center' });
+  const yApres = 125 + (nomLignes.length - 1) * 13;
+  doc.setDrawColor(...COUL.teal); doc.setLineWidth(1);
+  doc.line(LARGEUR / 2 - 25, yApres + 8, LARGEUR / 2 + 25, yApres + 8);
+
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(15); doc.setTextColor(...COUL.navy);
+  const message = doc.splitTextToSize(pdfTexte('La répartition des enseignants dans les ateliers a été réalisée au mieux pour répondre à leurs souhaits. Nous espérons que chacun sera satisfait de son programme.'), 140);
+  doc.text(message, LARGEUR / 2, yApres + 24, { align: 'center', lineHeightFactor: 1.5 });
+  doc.setFont('helvetica', 'italic'); doc.setFontSize(12); doc.setTextColor(...COUL.muted);
+  doc.text("L'équipe de la circonscription IEP1", LARGEUR / 2, yApres + 62, { align: 'center' });
+
+  doc.autoTable({
+    startY: 222, tableWidth: 120, margin: { left: (LARGEUR - 120) / 2 },
+    head: [config.sessions.map((s, i) => `Créneau ${i + 1}`)],
+    body: [config.sessions.map(s => pdfTexte(s.horaire))],
+    theme: 'grid', styles: { halign: 'center', fontSize: 11, cellPadding: 3, lineColor: COUL.bleu },
+    headStyles: { fillColor: COUL.bleu, textColor: COUL.blanc }
+  });
+}
+
+/** Construit le PDF des écoles données (une page de garde puis la liste de chaque école, à la suite). */
+async function construirePDF(liste) {
+  if (!window.jspdf || !window.jspdf.jsPDF) throw new Error("la bibliothèque PDF n'a pas pu être chargée (connexion internet ?)");
+  const [denc, iep1] = await Promise.all([chargerImage('assets/logo-denc.jpg', 'JPEG'), chargerImage('assets/logo-iep1.png', 'PNG')]);
+  const logos = { denc, iep1 };
+  const doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4' });
+  const plages = [];   // pages de chaque école : pour numéroter « page i / n » école par école
+
+  liste.forEach((ec, idx) => {
+    if (idx > 0) doc.addPage();
+    const debut = doc.getNumberOfPages();
+    dessinerCouverture(doc, ec, logos);
+    doc.addPage();
+
+    const enseignants = (ec.donnees.enseignants || []).slice().sort((a, b) => a.nom.localeCompare(b.nom));
+    const corps = enseignants.map(ens => {
+      const prog = programmeEnseignant(ens);
+      return [pdfTexte(ens.nom)].concat(prog.cellules.map(c => c.libre
+        ? { content: pdfTexte(c.texte), styles: { fontStyle: 'italic', textColor: COUL.muted } }
+        : pdfTexte(c.texte)));
+    });
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(...COUL.navy);
+    doc.text(pdfTexte(`${ec.nom} — atelier suivi à chaque créneau`), MARGE, 38);
+    doc.autoTable({
+      startY: 43,
+      margin: { top: 34, left: MARGE, right: MARGE, bottom: 18 },
+      head: [['Enseignant'].concat(config.sessions.map((s, i) => `Créneau ${i + 1}\n${pdfTexte(s.horaire)}`))],
+      body: corps.length > 0 ? corps : [[{ content: 'Aucun enseignant enregistré.', colSpan: config.sessions.length + 1 }]],
+      theme: 'grid', rowPageBreak: 'avoid',
+      styles: { fontSize: 9.5, cellPadding: 2.6, lineColor: [199, 208, 216], lineWidth: 0.2, textColor: COUL.navy, valign: 'middle' },
+      headStyles: { fillColor: COUL.navy, textColor: COUL.blanc, halign: 'left' },
+      alternateRowStyles: { fillColor: COUL.bleuClair },
+      columnStyles: { 0: { fontStyle: 'bold', cellWidth: 40 } },
+      didDrawPage: () => dessinerEntete(doc, logos)
+    });
+    plages.push({ nom: ec.nom, debut, fin: doc.getNumberOfPages() });
+  });
+
+  // Pied de page : école et numéro de page (propre à chaque école).
+  plages.forEach(({ nom, debut, fin }) => {
+    for (let p = debut; p <= fin; p++) {
+      doc.setPage(p);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...COUL.muted);
+      doc.text('IEP1 — Carrefour des pratiques', MARGE, HAUTEUR - 8);
+      doc.text(pdfTexte(`${nom} — page ${p - debut + 1} / ${fin - debut + 1}`), LARGEUR - MARGE, HAUTEUR - 8, { align: 'right' });
+    }
+  });
+  return doc;
+}
+
+function nomFichier(liste) {
+  if (liste.length !== 1) return 'Recapitulatif-toutes-les-ecoles.pdf';
+  const slug = normaliserNom(liste[0].nom).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  return `Recapitulatif-${slug || 'ecole'}.pdf`;
+}
+
+async function telecharger(liste, bouton) {
+  const libelle = bouton.textContent;
+  bouton.disabled = true; bouton.textContent = 'Génération…';
+  try {
+    const doc = await construirePDF(liste);
+    doc.save(nomFichier(liste));
+    afficherAlerte(`PDF téléchargé : ${echapper(nomFichier(liste))}.`, 'alerte-ok');
+  } catch (e) {
+    afficherAlerte("Échec de la génération du PDF : " + echapper(e.message), 'alerte-err');
+  } finally {
+    bouton.disabled = false; bouton.textContent = libelle;
+  }
+}
+
+if (exigerAdmin()) init();
+</script>
+</body>
+</html>
