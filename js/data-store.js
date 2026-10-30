@@ -109,7 +109,7 @@ const Store = {
   },
 
   /** Recalcule la répartition à partir de l'état actuel de toutes les écoles et l'enregistre.
-   *  Nécessite js/algo.js (calculerRepartition). Sûr à appeler automatiquement à chaque
+   *  Nécessite js/algo.js et js/algo-equilibre.js (calculerRepartitionEquilibree). Sûr à appeler automatiquement à chaque
    *  enregistrement d'école : l'horodatage garantit qu'un enseignant déjà placé ne peut jamais
    *  être "déplacé" par quelqu'un qui remplit plus tard (voir js/algo.js).
    *  Par défaut, respecte le réglage `config.repartirNonInscrits` (persistant) — on peut le
@@ -126,7 +126,9 @@ const Store = {
     // les 3 créneaux à animer le sien. Exclu du roulement, quel que soit son statut de choix.
     const participants = enseignants.filter(e => !estFormateur(e, ateliers));
     if (participants.length === 0) return null;
-    const resultat = calculerRepartition(ateliers, config, participants, options);
+    const resultat = calculerRepartitionEquilibree(ateliers, config, participants, options);
+    // Capacité insuffisante ou règle fondamentale violée : on n'écrase surtout pas la répartition enregistrée.
+    if (resultat.erreur) throw new Error(resultat.erreur);
     resultat.stats.formateurs = enseignants.length - participants.length;
     await this.sauvegarderRepartition(resultat);
     return resultat;

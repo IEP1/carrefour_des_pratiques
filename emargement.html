@@ -16,11 +16,25 @@
     @page { margin: 12mm; }
     #impression-emargement { display: block !important; }
     .no-print { display: none !important; }
-    .feuille-emargement { padding: 10px 0; }
-    .feuille-emargement h2 { margin-bottom: 2px; }
-    .feuille-emargement table { width: 100%; border-collapse: collapse; border: 1px solid #999; margin-top: 14px; }
-    .feuille-emargement th, .feuille-emargement td { border: 1px solid #999; padding: 8px; }
+    .feuille-emargement { padding: 4px 0; }
+    .feuille-emargement h2 { margin: 8px 0 2px; font-size: 1.35rem; }
+    .feuille-emargement table { width: 100%; border-collapse: collapse; border: 1px solid #999; margin-top: 8px; }
+    .feuille-emargement th, .feuille-emargement td { border: 1px solid #999; padding: 4px 8px; }
+    .feuille-emargement tr { page-break-inside: avoid; }
     .feuille-emargement .col-signature { width: 30%; }
+
+    /* En-tête : logo DENC à gauche, événement et date de l'animation pédagogique à droite */
+    .fe-entete { display: flex; align-items: center; justify-content: space-between; gap: 12mm; padding-bottom: 6px; border-bottom: 2px solid #0F2942; }
+    .fe-entete img { height: 15mm; width: auto; }
+    .fe-titre-event { text-align: right; line-height: 1.3; }
+    .fe-sur { font-size: 0.72rem; text-transform: uppercase; letter-spacing: .08em; color: #3E5468; }
+    .fe-event { font-size: 1.05rem; font-weight: 700; color: #0F2942; }
+    .fe-date { font-size: 0.95rem; font-weight: 700; }
+    .fe-creneau { margin: 0; font-size: 1rem; }
+
+    /* Cadre de signature de l'intervenant */
+    .fe-interv td { height: 11.5mm; }
+    .fe-interv .col-nom { width: 45%; font-weight: 700; }
   }
 </style>
 </head>
@@ -97,6 +111,12 @@ function nbParticipants(atelierId, sessionId) {
   return g ? g.participants.length : 0;
 }
 
+/** Atelier ouvert sur 2 créneaux seulement : pas de feuille d'émargement pour son créneau fermé. */
+function estFerme(atelierId, sessionId) {
+  const g = resultat.parSession[sessionId].find(x => x.atelierId === atelierId);
+  return !!(g && g.ferme);
+}
+
 function rendreTableau() {
   document.getElementById('entete-tableau').innerHTML =
     '<th>Atelier</th><th>Intervenant(s)</th>' +
@@ -107,7 +127,7 @@ function rendreTableau() {
     <tr>
       <td><strong>${echapper(a.titre)}</strong></td>
       <td>${a.intervenants.map(echapper).join(', ') || '—'}</td>
-      ${config.sessions.map(s => `<td class="col-session"><span class="nb-part">${nbParticipants(a.id, s.id)}</span></td>`).join('')}
+      ${config.sessions.map(s => `<td class="col-session"><span class="nb-part">${estFerme(a.id, s.id) ? '<em style="color:var(--texte-muted);font-weight:400;">fermé</em>' : nbParticipants(a.id, s.id)}</span></td>`).join('')}
       <td class="col-imprimer"><button class="btn btn-secondaire btn-sm btn-imprimer-atelier" data-atelier="${a.id}">🖨 Imprimer</button></td>
     </tr>
   `).join('');
@@ -115,7 +135,7 @@ function rendreTableau() {
   document.querySelectorAll('.btn-imprimer-atelier').forEach(btn => {
     btn.addEventListener('click', () => {
       const atelierId = btn.dataset.atelier;
-      const paires = config.sessions.map(s => ({ atelierId, sessionId: s.id }));
+      const paires = config.sessions.filter(s => !estFerme(atelierId, s.id)).map(s => ({ atelierId, sessionId: s.id }));
       genererEtImprimer(paires);
     });
   });
@@ -131,7 +151,7 @@ function rendreBoutonsRapides() {
     btn.addEventListener('click', () => {
       const sessionId = Number(btn.dataset.session);
       const paires = ateliers
-        .filter(a => nbParticipants(a.id, sessionId) > 0)
+        .filter(a => !estFerme(a.id, sessionId) && nbParticipants(a.id, sessionId) > 0)
         .map(a => ({ atelierId: a.id, sessionId }));
       genererEtImprimer(paires);
     });
@@ -139,10 +159,17 @@ function rendreBoutonsRapides() {
   document.getElementById('btn-imprimer-tout').addEventListener('click', () => {
     const paires = [];
     ateliers.forEach(a => config.sessions.forEach(s => {
-      if (nbParticipants(a.id, s.id) > 0) paires.push({ atelierId: a.id, sessionId: s.id });
+      if (!estFerme(a.id, s.id) && nbParticipants(a.id, s.id) > 0) paires.push({ atelierId: a.id, sessionId: s.id });
     }));
     genererEtImprimer(paires);
   });
+}
+
+/** "2026-11-04" -> "Mercredi 4 novembre 2026" */
+function dateLongue(iso) {
+  if (!iso) return '';
+  const t = new Date(iso + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
 function genererEtImprimer(paires) {
@@ -150,15 +177,32 @@ function genererEtImprimer(paires) {
   let html = '';
   paires.forEach(({ atelierId, sessionId }) => {
     const atelier = ateliers.find(a => a.id === atelierId);
+    const numeroCreneau = config.sessions.findIndex(x => x.id === sessionId) + 1;
     const s = config.sessions.find(x => x.id === sessionId);
     const groupe = resultat.parSession[sessionId].find(g => g.atelierId === atelierId);
     const participants = groupe ? groupe.participants : [];
+    // Au moins une ligne de signature, même si aucun intervenant n'est renseigné.
+    const intervenants = atelier.intervenants.length > 0 ? atelier.intervenants : [''];
     html += `
       <div class="feuille-emargement page-imprimable">
+        <div class="fe-entete">
+          <img src="assets/logo-denc.jpg" alt="DENC — Direction de l'Enseignement de la Nouvelle-Calédonie">
+          <div class="fe-titre-event">
+            <div class="fe-sur">Animation pédagogique</div>
+            <div class="fe-event">${echapper(config.titreEvenement)}</div>
+            <div class="fe-date">${echapper(dateLongue(config.date))}</div>
+            <div>${echapper(config.lieu)}</div>
+          </div>
+        </div>
         <h2>${echapper(atelier.titre)}</h2>
-        <p><strong>Animateur(s) :</strong> ${atelier.intervenants.map(echapper).join(', ') || '—'}</p>
-        <p><strong>${echapper(s.label)}</strong> — ${echapper(s.horaire)} — ${echapper(config.date)} — ${echapper(config.lieu)}</p>
-        <table style="width:100%;border-collapse:collapse;">
+        <p class="fe-creneau"><strong>Créneau ${numeroCreneau}</strong> — ${echapper(s.horaire)}</p>
+        <table class="fe-interv">
+          <thead><tr><th class="col-nom">Intervenant(s)</th><th>Signature</th></tr></thead>
+          <tbody>
+            ${intervenants.map(nom => `<tr><td class="col-nom">${echapper(nom)}</td><td></td></tr>`).join('')}
+          </tbody>
+        </table>
+        <table>
           <thead><tr><th style="width:40px;">N°</th><th>Enseignant</th><th>École</th><th class="col-signature">Émargement</th></tr></thead>
           <tbody>
             ${participants.length > 0 ? participants.map((p, i) => `
@@ -170,7 +214,9 @@ function genererEtImprimer(paires) {
     `;
   });
   zone.innerHTML = html;
-  window.print();
+  // On attend que le logo soit chargé avant d'ouvrir l'impression (sinon il peut manquer sur la 1re feuille).
+  const imgs = [...zone.querySelectorAll('img')].filter(i => !i.complete);
+  Promise.all(imgs.map(i => new Promise(r => { i.onload = i.onerror = r; }))).then(() => window.print());
 }
 
 if (exigerAdmin()) init();
