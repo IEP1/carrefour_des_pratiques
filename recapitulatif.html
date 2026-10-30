@@ -18,7 +18,7 @@
 <main>
   <div class="no-print">
     <h2>Récapitulatif par école</h2>
-    <p class="intro">Un fichier PDF en couleur par école : une page de garde, puis la liste de ses enseignants avec l'atelier suivi à chaque créneau. Le fichier se télécharge directement. « Toutes les écoles » produit un seul PDF avec les écoles à la suite.</p>
+    <p class="intro">Un fichier PDF en couleur par école : une page de présentation, puis la liste de ses enseignants avec l'atelier suivi à chaque créneau. Le fichier se télécharge directement. « Toutes les écoles » produit un seul PDF : la page de présentation une seule fois, puis les écoles à la suite.</p>
   </div>
 
   <div id="alerte-zone"></div>
@@ -142,9 +142,12 @@ function programmeEnseignant(ens) {
 
 /* ===== Génération du PDF (jsPDF + autoTable) ===== */
 const COUL = {
-  navy: [15, 41, 66], bleu: [0, 94, 134], bleuClair: [225, 238, 243], teal: [57, 178, 197],
-  orange: [244, 122, 75], muted: [62, 84, 104], blanc: [255, 255, 255]
+  navy: [15, 41, 66], bleu: [0, 94, 134], bleuMoyen: [38, 128, 168], teal: [57, 178, 197], tealClair: [226, 243, 245],
+  orange: [244, 122, 75], orangeClair: [253, 235, 226], vert: [124, 153, 71], vertClair: [238, 243, 228],
+  muted: [62, 84, 104], blanc: [255, 255, 255], gris: [244, 247, 250]
 };
+// Une teinte par créneau : couleur de l'en-tête de colonne et fond clair des cellules.
+const TEINTES = [[COUL.teal, COUL.tealClair], [COUL.orange, COUL.orangeClair], [COUL.vert, COUL.vertClair]];
 const MARGE = 15, LARGEUR = 210, HAUTEUR = 297;
 
 /** Texte compatible avec les polices standard d'un PDF (caractères Latin-1). */
@@ -176,6 +179,10 @@ async function chargerImage(url, format) {
 }
 
 function dessinerEntete(doc, logos) {
+  // Fine barre tricolore en haut de page
+  doc.setFillColor(...COUL.teal); doc.rect(0, 0, LARGEUR / 3, 3, 'F');
+  doc.setFillColor(...COUL.orange); doc.rect(LARGEUR / 3, 0, LARGEUR / 3, 3, 'F');
+  doc.setFillColor(...COUL.vert); doc.rect(2 * LARGEUR / 3, 0, LARGEUR / 3, 3, 'F');
   const h = 14;
   let x = MARGE;
   [['denc', logos.denc], ['iep1', logos.iep1]].forEach(([alias, logo]) => {
@@ -185,59 +192,52 @@ function dessinerEntete(doc, logos) {
   });
   doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...COUL.muted);
   doc.text('ANIMATION PÉDAGOGIQUE', LARGEUR - MARGE, 11.5, { align: 'right' });
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(11.5); doc.setTextColor(...COUL.navy);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11.5); doc.setTextColor(...COUL.bleu);
   doc.text(pdfTexte(config.titreEvenement), LARGEUR - MARGE, 16.5, { align: 'right' });
-  doc.setFontSize(9.5);
+  doc.setFontSize(9.5); doc.setTextColor(...COUL.navy);
   doc.text(pdfTexte(dateLongue(config.date)), LARGEUR - MARGE, 21, { align: 'right' });
   doc.setFont('helvetica', 'normal');
   doc.text(pdfTexte(config.lieu), LARGEUR - MARGE, 25, { align: 'right' });
-  doc.setDrawColor(...COUL.navy); doc.setLineWidth(0.6);
+  doc.setDrawColor(...COUL.teal); doc.setLineWidth(0.7);
   doc.line(MARGE, 28, LARGEUR - MARGE, 28);
 }
 
-function dessinerCouverture(doc, ec, logos) {
+/** Page de présentation : `grandTitre` = nom de l'école (un PDF par école) ou de l'événement (toutes les écoles). */
+function dessinerCouverture(doc, grandTitre, logos) {
   dessinerEntete(doc, logos);
-  doc.setFillColor(...COUL.navy); doc.rect(0, 62, LARGEUR, 34, 'F');
-  doc.setFillColor(...COUL.orange); doc.rect(0, 96, LARGEUR, 2.2, 'F');
-  doc.setTextColor(...COUL.blanc); doc.setFont('helvetica', 'bold'); doc.setFontSize(25);
-  doc.text('Récapitulatif de la répartition', LARGEUR / 2, 83, { align: 'center' });
+  doc.setFillColor(...COUL.tealClair); doc.rect(0, 75, LARGEUR, 36, 'F');
+  doc.setFillColor(...COUL.orange); doc.rect(0, 111, LARGEUR, 2, 'F');
+  doc.setTextColor(...COUL.bleu); doc.setFont('helvetica', 'bold'); doc.setFontSize(25);
+  doc.text('Récapitulatif de la répartition', LARGEUR / 2, 98, { align: 'center' });
 
-  doc.setTextColor(...COUL.bleu); doc.setFontSize(32);
-  const nomLignes = doc.splitTextToSize(pdfTexte(ec.nom), LARGEUR - 2 * MARGE - 10);
-  doc.text(nomLignes, LARGEUR / 2, 125, { align: 'center' });
-  const yApres = 125 + (nomLignes.length - 1) * 13;
-  doc.setDrawColor(...COUL.teal); doc.setLineWidth(1);
+  doc.setTextColor(...COUL.teal); doc.setFontSize(32);
+  const nomLignes = doc.splitTextToSize(pdfTexte(grandTitre), LARGEUR - 2 * MARGE - 10);
+  doc.text(nomLignes, LARGEUR / 2, 142, { align: 'center' });
+  const yApres = 142 + (nomLignes.length - 1) * 13;
+  doc.setDrawColor(...COUL.orange); doc.setLineWidth(1);
   doc.line(LARGEUR / 2 - 25, yApres + 8, LARGEUR / 2 + 25, yApres + 8);
 
   doc.setFont('helvetica', 'normal'); doc.setFontSize(15); doc.setTextColor(...COUL.navy);
   const message = doc.splitTextToSize(pdfTexte('La répartition des enseignants dans les ateliers a été réalisée au mieux pour répondre à leurs souhaits. Nous espérons que chacun sera satisfait de son programme.'), 140);
-  doc.text(message, LARGEUR / 2, yApres + 24, { align: 'center', lineHeightFactor: 1.5 });
+  doc.text(message, LARGEUR / 2, yApres + 26, { align: 'center', lineHeightFactor: 1.5 });
   doc.setFont('helvetica', 'italic'); doc.setFontSize(12); doc.setTextColor(...COUL.muted);
-  doc.text("L'équipe de la circonscription IEP1", LARGEUR / 2, yApres + 62, { align: 'center' });
-
-  doc.autoTable({
-    startY: 222, tableWidth: 120, margin: { left: (LARGEUR - 120) / 2 },
-    head: [config.sessions.map((s, i) => `Créneau ${i + 1}`)],
-    body: [config.sessions.map(s => pdfTexte(s.horaire))],
-    theme: 'grid', styles: { halign: 'center', fontSize: 11, cellPadding: 3, lineColor: COUL.bleu },
-    headStyles: { fillColor: COUL.bleu, textColor: COUL.blanc }
-  });
+  doc.text("L'équipe de la circonscription IEP1", LARGEUR / 2, yApres + 66, { align: 'center' });
 }
 
-/** Construit le PDF des écoles données (une page de garde puis la liste de chaque école, à la suite). */
+/** Construit le PDF : une page de présentation, puis la liste de chaque école à la suite.
+ *  Pour une seule école, la présentation porte son nom ; pour plusieurs, elle n'apparaît qu'une fois, au début. */
 async function construirePDF(liste) {
   if (!window.jspdf || !window.jspdf.jsPDF) throw new Error("la bibliothèque PDF n'a pas pu être chargée (connexion internet ?)");
   const [denc, iep1] = await Promise.all([chargerImage('assets/logo-denc.jpg', 'JPEG'), chargerImage('assets/logo-iep1.png', 'PNG')]);
   const logos = { denc, iep1 };
   const doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4' });
+  const uneSeuleEcole = liste.length === 1;
+  dessinerCouverture(doc, uneSeuleEcole ? liste[0].nom : config.titreEvenement, logos);
   const plages = [];   // pages de chaque école : pour numéroter « page i / n » école par école
 
-  liste.forEach((ec, idx) => {
-    if (idx > 0) doc.addPage();
-    const debut = doc.getNumberOfPages();
-    dessinerCouverture(doc, ec, logos);
+  liste.forEach(ec => {
+    const debut = uneSeuleEcole ? 1 : doc.getNumberOfPages() + 1;   // avec une seule école, la présentation compte dans sa numérotation
     doc.addPage();
-
     const enseignants = (ec.donnees.enseignants || []).slice().sort((a, b) => a.nom.localeCompare(b.nom));
     const corps = enseignants.map(ens => {
       const prog = programmeEnseignant(ens);
@@ -245,31 +245,40 @@ async function construirePDF(liste) {
         ? { content: pdfTexte(c.texte), styles: { fontStyle: 'italic', textColor: COUL.muted } }
         : pdfTexte(c.texte)));
     });
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(...COUL.navy);
-    doc.text(pdfTexte(`${ec.nom} — atelier suivi à chaque créneau`), MARGE, 38);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(...COUL.bleu);
+    doc.text(pdfTexte(ec.nom), MARGE, 39);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...COUL.muted);
+    doc.text(pdfTexte(`${enseignants.length} enseignant${enseignants.length > 1 ? 's' : ''} — atelier suivi à chaque créneau`), MARGE, 45);
     doc.autoTable({
-      startY: 43,
+      startY: 50,
       margin: { top: 34, left: MARGE, right: MARGE, bottom: 18 },
       head: [['Enseignant'].concat(config.sessions.map((s, i) => `Créneau ${i + 1}\n${pdfTexte(s.horaire)}`))],
       body: corps.length > 0 ? corps : [[{ content: 'Aucun enseignant enregistré.', colSpan: config.sessions.length + 1 }]],
       theme: 'grid', rowPageBreak: 'avoid',
-      styles: { fontSize: 9.5, cellPadding: 2.6, lineColor: [199, 208, 216], lineWidth: 0.2, textColor: COUL.navy, valign: 'middle' },
-      headStyles: { fillColor: COUL.navy, textColor: COUL.blanc, halign: 'left' },
-      alternateRowStyles: { fillColor: COUL.bleuClair },
-      columnStyles: { 0: { fontStyle: 'bold', cellWidth: 40 } },
+      styles: { fontSize: 9.5, cellPadding: { top: 3.2, bottom: 3.2, left: 3.5, right: 3.5 }, lineColor: COUL.blanc, lineWidth: 0.9, textColor: COUL.navy, valign: 'middle' },
+      headStyles: { textColor: COUL.blanc, fontStyle: 'bold', halign: 'left', cellPadding: 3.8 },
+      columnStyles: { 0: { fontStyle: 'bold', cellWidth: 42, textColor: COUL.bleu } },
+      didParseCell: (d) => {
+        const col = d.column.index;
+        const [fort, clair] = TEINTES[(col - 1 + TEINTES.length) % TEINTES.length];
+        if (d.section === 'head') d.cell.styles.fillColor = col === 0 ? COUL.bleuMoyen : fort;
+        else d.cell.styles.fillColor = col === 0 ? (d.row.index % 2 ? COUL.gris : COUL.blanc) : clair;
+      },
       didDrawPage: () => dessinerEntete(doc, logos)
     });
     plages.push({ nom: ec.nom, debut, fin: doc.getNumberOfPages() });
   });
 
-  // Pied de page : école et numéro de page (propre à chaque école).
+  // Pied de page : école et numéro de page (propre à chaque école) ; la présentation commune n'a que la marque.
+  const pied = (p, texteDroite) => {
+    doc.setPage(p);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...COUL.muted);
+    doc.text('IEP1 — Carrefour des pratiques', MARGE, HAUTEUR - 8);
+    if (texteDroite) doc.text(pdfTexte(texteDroite), LARGEUR - MARGE, HAUTEUR - 8, { align: 'right' });
+  };
+  if (!uneSeuleEcole) pied(1);
   plages.forEach(({ nom, debut, fin }) => {
-    for (let p = debut; p <= fin; p++) {
-      doc.setPage(p);
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...COUL.muted);
-      doc.text('IEP1 — Carrefour des pratiques', MARGE, HAUTEUR - 8);
-      doc.text(pdfTexte(`${nom} — page ${p - debut + 1} / ${fin - debut + 1}`), LARGEUR - MARGE, HAUTEUR - 8, { align: 'right' });
-    }
+    for (let p = debut; p <= fin; p++) pied(p, `${nom} — page ${p - debut + 1} / ${fin - debut + 1}`);
   });
   return doc;
 }
